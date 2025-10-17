@@ -12,18 +12,16 @@ dry_run: false
 # 左/右手 CAN 接口与 ID
 hands:
   left:
-    interface: "can3"
+    interface: "can2"
     id: "0x28"
   right:
-    interface: "can2"
+    interface: "can3"
     id: "0x27"
 
-# 气泵
+# 气泵控制（仅串口）
 pump:
-  use_serial: true
   port_name: /dev/ttyUSB0
   
-qibenginterface: "can4"
 # 预备手势：开演前对左右手下发一帧"全释放姿态"（即 release_profile），等待 hold_ms 再开始
 ready:
   enabled: true
@@ -41,7 +39,7 @@ sn_left_release_profile: [116, 56, 255, 254, 252, 255]
 sn_left_high_Thumb: [96, 56, 239, 233, 232, 255]
 #倍高音，修改默认中音的前两位。对应Thumb1
 sn_left_high_pro_Thumb: [110, 43]
-sn_right_press_profile: [0, 255, 237, 222, 236, 255]
+sn_right_press_profile: [0, 255, 230, 222, 236, 255]
 sn_right_release_profile: [0, 255, 255, 241, 253, 255]
 arms:
     can0:

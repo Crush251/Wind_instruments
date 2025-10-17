@@ -64,6 +64,11 @@ func (ws *WebServer) StartWebServer() {
 	r.GET("/api/fingerings", ws.getFingeringMap)
 	r.POST("/api/fingerings/send", ws.sendSingleFingering)
 
+	// 预处理相关API
+	r.POST("/api/preprocess", ws.preprocessSequence)
+	r.GET("/api/exec/check", ws.checkExecFile)
+	r.POST("/api/exec/play", ws.playExecSequence)
+
 	// 静态文件服务（前端）
 	r.Static("/static", "./web/static")
 	r.LoadHTMLGlob("web/templates/*")
@@ -271,33 +276,36 @@ func (ws *WebServer) pausePlayback(c *gin.Context) {
 func (ws *WebServer) stopPlayback(c *gin.Context) {
 	playbackController.mutex.RLock()
 	isRunning := playbackController.isRunning
+	instrument := playbackController.instrument
 	playbackController.mutex.RUnlock()
 
-	if !isRunning {
-		// 即使没有演奏在进行，也确保气泵关闭和手势复位
-		utils := NewUtils()
-		if playbackController.config.CanBridgeURL != "" {
-			utils.ControlAirPumpWithLock(playbackController.config, false)
-			readyController := NewReadyGestureController()
-			if playbackController.instrument != "" && playbackController.config.Ready.Enabled {
-				readyController.ExecuteReadyGesture(playbackController.config, playbackController.instrument)
-			}
+	// 发送停止信号（如果正在运行）
+	if isRunning {
+		select {
+		case playbackController.stopChan <- true:
+		default:
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "演奏已停止（或未在进行）"})
-		return
 	}
 
-	// 发送停止信号
-	select {
-	case playbackController.stopChan <- true:
-	default:
+	// 无论是否在运行，都确保气泵关闭
+	if globalPumpController != nil {
+		GlobalPumpOff()
+		fmt.Println("🔴 停止按钮：气泵已关闭")
 	}
 
-	// 停止演奏恢复到预演奏手势
-	utils := NewUtils()
-	utils.ControlAirPumpWithLock(playbackController.config, false)
-	readyController := NewReadyGestureController()
-	readyController.ExecuteReadyGesture(playbackController.config, playbackController.instrument)
+	// 执行预备手势（松开手指）
+	if playbackController.config.Ready.Enabled && instrument != "" {
+		readyController := NewReadyGestureController()
+		readyController.ExecuteReadyGesture(playbackController.config, instrument)
+		fmt.Println("🤲 停止按钮：执行预备手势")
+	}
+
+	// 更新状态
+	playbackController.mutex.Lock()
+	playbackController.isRunning = false
+	playbackController.status.IsPlaying = false
+	playbackController.status.IsPaused = false
+	playbackController.mutex.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{"message": "演奏已停止"})
 }
@@ -370,4 +378,175 @@ func (ws *WebServer) sendSingleFingering(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已发送音符 %s 的指法", request.Note)})
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 预处理相关API
+////////////////////////////////////////////////////////////////////////////////
+
+// preprocessSequence 预处理音乐文件生成执行序列
+func (ws *WebServer) preprocessSequence(c *gin.Context) {
+	var request struct {
+		SourceFile    string  `json:"source_file"`
+		Instrument    string  `json:"instrument"`
+		BPM           float64 `json:"bpm"`
+		TonguingDelay int     `json:"tonguing_delay"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
+		return
+	}
+
+	// 确保exec目录存在
+	execDir := "exec"
+	if err := os.MkdirAll(execDir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建exec目录失败: %v", err)})
+		return
+	}
+
+	// 生成输出文件名
+	baseFilename := filepath.Base(request.SourceFile)
+	baseFilename = baseFilename[:len(baseFilename)-5] // 移除.json
+	outputFilename := fmt.Sprintf("%s_%s_%.0f_%d.exec.json",
+		baseFilename, request.Instrument, request.BPM, request.TonguingDelay)
+	outputPath := filepath.Join(execDir, outputFilename)
+
+	// 加载配置和指法映射
+	cfg := ws.fileReader.LoadConfig("config.yaml")
+	fingeringMap := ws.fileReader.LoadFingeringMapByInstrument(request.Instrument)
+
+	// 获取BPM
+	bpm := request.BPM
+	if bpm <= 0 {
+		bpm = cfg.BPM
+		if bpm <= 0 {
+			bpm = 60
+		}
+	}
+
+	// 创建预处理器
+	preprocessor := NewSequencePreprocessor(cfg, fingeringMap, request.Instrument, bpm, request.TonguingDelay)
+
+	// 生成执行序列
+	if err := preprocessor.GenerateExecutionSequence(request.SourceFile, outputPath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("预处理失败: %v", err)})
+		return
+	}
+
+	// 读取生成的序列文件获取元数据
+	sequence, err := loadExecutionSequence(outputPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取序列文件失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "预处理完成",
+		"exec_file":    outputFilename,
+		"exec_path":    outputPath,
+		"total_events": sequence.Meta.TotalEvents,
+		"duration_ms":  sequence.Meta.TotalDurationMS,
+		"duration_sec": sequence.Meta.TotalDurationMS / 1000.0,
+	})
+}
+
+// checkExecFile 检查执行序列文件是否存在
+func (ws *WebServer) checkExecFile(c *gin.Context) {
+	sourceFile := c.Query("source_file")
+	instrument := c.Query("instrument")
+	bpm := c.Query("bpm")
+	tonguingDelay := c.Query("tonguing_delay")
+
+	if sourceFile == "" || instrument == "" || bpm == "" || tonguingDelay == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少必要参数"})
+		return
+	}
+
+	// 生成预期的文件名
+	baseFilename := filepath.Base(sourceFile)
+	baseFilename = baseFilename[:len(baseFilename)-5]
+	execFilename := fmt.Sprintf("%s_%s_%s_%s.exec.json",
+		baseFilename, instrument, bpm, tonguingDelay)
+	execPath := filepath.Join("exec", execFilename)
+
+	// 检查文件是否存在
+	if _, err := os.Stat(execPath); os.IsNotExist(err) {
+		c.JSON(http.StatusOK, gin.H{
+			"exists":    false,
+			"exec_file": execFilename,
+		})
+		return
+	}
+
+	// 读取序列文件获取元数据
+	sequence, err := loadExecutionSequence(execPath)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"exists": false,
+			"error":  fmt.Sprintf("文件损坏: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"exists":       true,
+		"exec_file":    execFilename,
+		"exec_path":    execPath,
+		"total_events": sequence.Meta.TotalEvents,
+		"duration_ms":  sequence.Meta.TotalDurationMS,
+		"duration_sec": sequence.Meta.TotalDurationMS / 1000.0,
+	})
+}
+
+// playExecSequence 播放预计算的执行序列
+func (ws *WebServer) playExecSequence(c *gin.Context) {
+	var request struct {
+		ExecFile string `json:"exec_file"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
+		return
+	}
+
+	// 构建完整路径
+	execPath := filepath.Join("exec", request.ExecFile)
+
+	// 检查文件是否存在
+	if _, err := os.Stat(execPath); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "执行序列文件不存在"})
+		return
+	}
+
+	// 停止当前播放（如果有）
+	if playbackController.isRunning {
+		select {
+		case playbackController.stopChan <- true:
+		default:
+		}
+	}
+
+	// 加载配置
+	cfg := ws.fileReader.LoadConfig("config.yaml")
+
+	// 创建执行引擎
+	engine, err := NewExecutionEngine(execPath, cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建执行引擎失败: %v", err)})
+		return
+	}
+
+	// 异步开始播放
+	if err := engine.PlayAsync(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("启动播放失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "开始播放执行序列",
+		"exec_file":    request.ExecFile,
+		"total_events": engine.sequence.Meta.TotalEvents,
+		"duration_sec": engine.sequence.Meta.TotalDurationMS / 1000.0,
+	})
 }

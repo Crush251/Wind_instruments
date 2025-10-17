@@ -28,12 +28,16 @@ func main() {
 
 	// 定义命令行参数
 	var (
-		inputFile   = flag.String("in", "", "输入音乐文件路径 (例: trsmusic/test.json)")
-		instrument  = flag.String("instrument", "sks", "乐器类型: sks(萨克斯) 或 sn(唢呐)")
-		configFile  = flag.String("config", "config.yaml", "配置文件路径")
-		bpmOverride = flag.Float64("bpm", 0, "覆盖BPM设置 (0表示使用配置文件或JSON文件中的值)")
-		dryRun      = flag.Bool("dry", false, "调试模式，只打印不发送CAN指令")
-		help        = flag.Bool("help", false, "显示帮助信息")
+		inputFile     = flag.String("in", "", "输入音乐文件路径 (例: trsmusic/test.json)")
+		instrument    = flag.String("instrument", "sks", "乐器类型: sks(萨克斯) 或 sn(唢呐)")
+		configFile    = flag.String("config", "config.yaml", "配置文件路径")
+		bpmOverride   = flag.Float64("bpm", 0, "覆盖BPM设置 (0表示使用配置文件或JSON文件中的值)")
+		tonguingDelay = flag.Int("tongue", 30, "吐音延迟时间（毫秒）")
+		dryRun        = flag.Bool("dry", false, "调试模式，只打印不发送CAN指令")
+		help          = flag.Bool("help", false, "显示帮助信息")
+		preprocess    = flag.Bool("preprocess", false, "预处理模式：生成执行序列文件")
+		outputFile    = flag.String("out", "", "预处理输出文件路径 (例: trsmusic/test.exec.json)")
+		execFile      = flag.String("exec", "", "执行预计算的序列文件 (例: trsmusic/test.exec.json)")
 	)
 
 	flag.Parse()
@@ -48,15 +52,85 @@ func main() {
 	fileReader := NewFileReader()
 	cfg := fileReader.LoadConfig(*configFile)
 
-	// 初始化气泵控制器（如果配置为使用串口）
-	if cfg.Pump.UseSerial && cfg.Pump.PortName != "" {
-		fmt.Printf("🔧 正在初始化气泵控制器...\n")
+	// === 预处理模式 ===
+	if *preprocess {
+		if *inputFile == "" {
+			fmt.Println("❌ 错误: 预处理模式需要指定输入文件 (-in)")
+			os.Exit(1)
+		}
+		if *outputFile == "" {
+			// 自动生成输出文件名
+			inputStr := *inputFile
+			*outputFile = inputStr[:len(inputStr)-5] + ".exec.json"
+		}
+
+		// 加载指法映射
+		fingeringMap := fileReader.LoadFingeringMapByInstrument(*instrument)
+
+		// 获取BPM
+		bpm := *bpmOverride
+		if bpm <= 0 {
+			bpm = cfg.BPM
+			if bpm <= 0 {
+				bpm = 60 // 默认BPM
+			}
+		}
+
+		// 创建预处理器
+		preprocessor := NewSequencePreprocessor(cfg, fingeringMap, *instrument, bpm, *tonguingDelay)
+
+		// 生成执行序列
+		if err := preprocessor.GenerateExecutionSequence(*inputFile, *outputFile); err != nil {
+			fmt.Printf("❌ 预处理失败: %v\n", err)
+			os.Exit(1)
+		}
+
+		return
+	}
+
+	// === 执行预计算序列模式 ===
+	if *execFile != "" {
+		// 初始化气泵控制器（串口）
+		if cfg.Pump.PortName != "" {
+			fmt.Printf("🔧 正在初始化气泵控制器（串口）...\n")
+			if err := InitGlobalPumpController(cfg.Pump.PortName); err != nil {
+				fmt.Printf("❌ 气泵控制器初始化失败: %v\n", err)
+				//os.Exit(1)
+			}
+		} else {
+			fmt.Println("❌ 错误: 配置文件中未指定气泵串口")
+			os.Exit(1)
+		}
+
+		// 创建执行引擎
+		engine, err := NewExecutionEngine(*execFile, cfg)
+		if err != nil {
+			fmt.Printf("❌ 创建执行引擎失败: %v\n", err)
+			os.Exit(1)
+		}
+
+		// 执行播放
+		if err := engine.Play(); err != nil {
+			fmt.Printf("❌ 播放失败: %v\n", err)
+			os.Exit(1)
+		}
+
+		// 演奏结束后关闭气泵控制器
+		CloseGlobalPumpController()
+		return
+	}
+
+	// === 传统模式 ===
+	// 初始化气泵控制器（串口）
+	if cfg.Pump.PortName != "" {
+		fmt.Printf("🔧 正在初始化气泵控制器（串口）...\n")
 		if err := InitGlobalPumpController(cfg.Pump.PortName); err != nil {
-			fmt.Printf("⚠️  气泵控制器初始化失败: %v\n", err)
-			fmt.Println("   将使用CAN通信方式")
+			fmt.Printf("❌ 气泵控制器初始化失败: %v\n", err)
+			//os.Exit(1)
 		}
 	} else {
-		fmt.Println("🔧 使用CAN通信方式控制气泵")
+		fmt.Println("❌ 错误: 配置文件中未指定气泵串口")
+		os.Exit(1)
 	}
 
 	// 如果指定了输入文件，直接演奏模式

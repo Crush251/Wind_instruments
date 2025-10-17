@@ -48,6 +48,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化BPM输入监听
     initBpmListener();
+    
+    // 初始化预处理按钮
+    initPreprocessButton();
 });
 
 // 设置事件监听器
@@ -150,6 +153,9 @@ function selectFile(file) {
     
     // 加载歌曲时间轴
     loadSongTimeline(file.filename);
+    
+    // 检查执行序列缓存
+    checkExecCache();
 }
 
 // 更新开始按钮状态
@@ -164,6 +170,14 @@ async function startPlayback() {
     try {
         startBtn.disabled = true;
         
+        // 重置计时器显示（开始新播放时）
+        stopTimer();
+        updateTimerDisplay(0);
+        document.getElementById('timeDiff').textContent = '-';
+        
+        // 隐藏之前的空拍详情
+        hideSignificantRests();
+        
         // 获取用户输入的参数
         const bpmInput = document.getElementById('bpmInput');
         const tonguingDelayInput = document.getElementById('tonguingDelayInput');
@@ -171,6 +185,24 @@ async function startPlayback() {
         const bpm = bpmInput.value ? parseFloat(bpmInput.value) : 0;
         const tonguingDelay = parseInt(tonguingDelayInput.value) || 30;
         
+        // 检查是否使用缓存模式
+        const useCache = document.getElementById('useCacheCheckbox')?.checked;
+        
+        if (useCache && currentExecFile) {
+            // 使用预计算执行序列播放
+            const success = await playExecSequence();
+            if (success) {
+                isPlaying = true;
+                isPaused = false;
+                updateButtonStates();
+                startTimer();
+            } else {
+                startBtn.disabled = false;
+            }
+            return;
+        }
+        
+        // 传统播放模式
         const response = await fetch('/api/playback/start', {
             method: 'POST',
             headers: {
@@ -196,6 +228,7 @@ async function startPlayback() {
         isPaused = false;
         updateButtonStates();
         showNotification('成功', '演奏已开始', 'success');
+        startTimer();
         
     } catch (error) {
         console.error('开始演奏失败:', error);
@@ -256,7 +289,8 @@ async function stopPlayback() {
         isPaused = false;
         // 不清除selectedFile，这样可以直接重新开始
         updateButtonStates();
-        resetStatus();
+        // 不调用 resetStatus()，保留最终计时结果显示
+        stopTimer(); // 停止计时器
         showNotification('成功', '演奏已停止', 'success');
         
     } catch (error) {
@@ -316,12 +350,22 @@ async function updateStatus() {
 		
 		progressBarEl.style.width = `${status.progress || 0}%`;
 		
-		// 检查演奏是否已结束，如果是则重置前端状态
+		// 检查演奏是否已结束，如果是则重置前端状态并显示空拍信息
 		if (!status.is_playing && isPlaying) {
 			isPlaying = false;
 			isPaused = false;
 			updateButtonStates();
 			updateStartButtonState();
+			pauseTimerAtEnd(); // 暂停计时器但保留最终显示
+			
+			// 显示播放结束后的统计信息（包括空拍）
+			console.log('播放结束，检查空拍数据:', status.significant_rests);
+			if (status.significant_rests && status.significant_rests.length > 0) {
+				console.log('显示', status.significant_rests.length, '个显著空拍');
+				displaySignificantRests(status.significant_rests);
+			} else {
+				console.log('没有显著空拍数据');
+			}
 		}
 		
 	} catch (error) {
@@ -879,3 +923,307 @@ function initModalListeners() {
 
 // 将函数暴露到全局作用域
 window.openRestEditModal = openRestEditModal;
+
+////////////////////////////////////////////////////////////////////////////////
+// 预处理和执行序列相关功能
+////////////////////////////////////////////////////////////////////////////////
+
+let currentExecFile = null;
+let theoreticalDuration = 0;
+let timerInterval = null;
+let timerStartTime = null;
+let pausedTime = 0;
+
+// 初始化预处理按钮
+function initPreprocessButton() {
+    const preprocessBtn = document.getElementById('preprocessBtn');
+    const useCacheCheckbox = document.getElementById('useCacheCheckbox');
+    
+    if (preprocessBtn) {
+        preprocessBtn.addEventListener('click', handlePreprocess);
+    }
+    
+    // 文件选择或参数变化时检查缓存
+    document.getElementById('bpmInput')?.addEventListener('change', checkExecCache);
+    document.getElementById('tonguingDelayInput')?.addEventListener('change', checkExecCache);
+}
+
+// 检查执行序列缓存
+async function checkExecCache() {
+    if (!selectedFile) return;
+    
+    const useCache = document.getElementById('useCacheCheckbox')?.checked;
+    if (!useCache) {
+        currentExecFile = null;
+        updatePreprocessStatus('未使用缓存', 'info');
+        return;
+    }
+    
+    const bpm = document.getElementById('bpmInput').value || '0';
+    const tonguingDelay = document.getElementById('tonguingDelayInput').value || '30';
+    const instrument = currentInstrument;
+    
+    try {
+        const sourceFile = selectedFile.file_path || selectedFile.filename;
+        const response = await fetch(`/api/exec/check?source_file=${encodeURIComponent(sourceFile)}&instrument=${instrument}&bpm=${bpm}&tonguing_delay=${tonguingDelay}`);
+        const data = await response.json();
+        
+        if (data.exists) {
+            currentExecFile = data.exec_file;
+            theoreticalDuration = data.duration_sec;
+            updatePreprocessStatus(`✅ 找到缓存文件（时长: ${data.duration_sec.toFixed(2)}秒）`, 'success');
+            updateSongDuration(data.duration_sec);
+        } else {
+            currentExecFile = null;
+            updatePreprocessStatus('⚠️ 未找到缓存，需要预处理', 'warning');
+        }
+    } catch (error) {
+        console.error('检查缓存失败:', error);
+        updatePreprocessStatus('❌ 检查缓存失败', 'error');
+    }
+}
+
+// 处理预处理请求
+async function handlePreprocess() {
+    if (!selectedFile) {
+        updatePreprocessStatus('❌ 请先选择音乐文件', 'error');
+        return;
+    }
+    
+    const bpm = parseFloat(document.getElementById('bpmInput').value) || 0;
+    const tonguingDelay = parseInt(document.getElementById('tonguingDelayInput').value) || 30;
+    const instrument = currentInstrument;
+    
+    updatePreprocessStatus('🔄 正在预处理...', 'loading');
+    
+    const preprocessBtn = document.getElementById('preprocessBtn');
+    if (preprocessBtn) preprocessBtn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/preprocess', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                source_file: selectedFile.file_path || selectedFile.filename,
+                instrument: instrument,
+                bpm: bpm,
+                tonguing_delay: tonguingDelay
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            currentExecFile = data.exec_file;
+            theoreticalDuration = data.duration_sec;
+            updatePreprocessStatus(`✅ 预处理完成！时长: ${data.duration_sec.toFixed(2)}秒，事件数: ${data.total_events}`, 'success');
+            updateSongDuration(data.duration_sec);
+        } else {
+            updatePreprocessStatus(`❌ 预处理失败: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('预处理失败:', error);
+        updatePreprocessStatus('❌ 预处理失败: 网络错误', 'error');
+    } finally {
+        if (preprocessBtn) preprocessBtn.disabled = false;
+    }
+}
+
+// 更新预处理状态显示
+function updatePreprocessStatus(message, type) {
+    const statusElement = document.getElementById('preprocessStatus');
+    if (!statusElement) return;
+    
+    statusElement.textContent = message;
+    statusElement.className = `preprocess-status ${type}`;
+}
+
+// 更新歌曲时长显示
+function updateSongDuration(durationSec) {
+    const durationElement = document.getElementById('songDuration');
+    if (durationElement) {
+        const minutes = Math.floor(durationSec / 60);
+        const seconds = (durationSec % 60).toFixed(2);
+        durationElement.textContent = `${minutes}:${seconds.padStart(5, '0')}`;
+    }
+}
+
+// 启动计时器
+function startTimer() {
+    timerStartTime = Date.now() - pausedTime;
+    pausedTime = 0;
+    
+    timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - timerStartTime) / 1000;
+        updateTimerDisplay(elapsed);
+        
+        // 计算时间误差
+        if (theoreticalDuration > 0) {
+            const diff = elapsed - theoreticalDuration;
+            const diffPercent = (diff / theoreticalDuration * 100).toFixed(2);
+            document.getElementById('timeDiff').textContent = `${diff >= 0 ? '+' : ''}${diff.toFixed(3)}s (${diffPercent}%)`;
+        }
+    }, 10); // 每10ms更新一次，显示毫秒
+}
+
+// 暂停计时器
+function pauseTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        pausedTime = Date.now() - timerStartTime;
+    }
+}
+
+// 停止计时器（用于手动停止或开始新播放）
+function stopTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    timerStartTime = null;
+    pausedTime = 0;
+    updateTimerDisplay(0);
+    document.getElementById('timeDiff').textContent = '-';
+}
+
+// 暂停计时器但保留显示（用于播放自然结束）
+function pauseTimerAtEnd() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    // 保留 timerStartTime 和 pausedTime，不清零显示
+    // 这样最终的时间和误差会保留在界面上
+}
+
+// 更新计时器显示
+function updateTimerDisplay(seconds) {
+    const timerElement = document.getElementById('actualTimer');
+    if (!timerElement) return;
+    
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    
+    timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+}
+
+// 播放执行序列
+async function playExecSequence() {
+    if (!currentExecFile) {
+        showNotification('错误', '请先预处理或选择缓存文件', 'error');
+        return false;
+    }
+    
+    try {
+        const response = await fetch('/api/exec/play', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                exec_file: currentExecFile
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showNotification('成功', '开始播放执行序列', 'success');
+            return true;
+        } else {
+            showNotification('错误', `播放失败: ${data.error}`, 'error');
+            return false;
+        }
+    } catch (error) {
+        console.error('播放失败:', error);
+        showNotification('错误', '播放失败: 网络错误', 'error');
+        return false;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 显著空拍显示功能
+////////////////////////////////////////////////////////////////////////////////
+
+// 显示显著空拍详情
+function displaySignificantRests(rests) {
+    console.log('displaySignificantRests 被调用，数据:', rests);
+    
+    const restDetailsSection = document.getElementById('restDetailsSection');
+    const restDetailsContent = document.getElementById('restDetailsContent');
+    const significantRestCount = document.getElementById('significantRestCount');
+    
+    console.log('DOM元素:', { restDetailsSection, restDetailsContent, significantRestCount });
+    
+    if (!restDetailsSection || !restDetailsContent) {
+        console.error('DOM元素未找到！');
+        return;
+    }
+    
+    // 更新显著空拍数量
+    if (significantRestCount) {
+        significantRestCount.textContent = rests.length;
+    }
+    
+    if (rests.length === 0) {
+        restDetailsSection.style.display = 'none';
+        return;
+    }
+    
+    // 显示区域
+    restDetailsSection.style.display = 'block';
+    console.log('显示区域已展开');
+    
+    // 清空现有内容
+    restDetailsContent.innerHTML = '';
+    
+    // 生成每个空拍的详情
+    rests.forEach((rest, index) => {
+        console.log(`生成空拍${index + 1}:`, rest);
+        console.log(`  start_offset: ${rest.start_offset}, 格式化: ${formatTime(rest.start_offset)}`);
+        console.log(`  end_offset: ${rest.end_offset}, 格式化: ${formatTime(rest.end_offset)}`);
+        
+        const restItem = document.createElement('div');
+        restItem.className = 'rest-item';
+        
+        restItem.innerHTML = `
+            <div class="rest-label">空拍${index + 1}</div>
+            <div class="rest-time">
+                <span class="label">起始时间</span>
+                <span class="value">${formatTime(rest.start_offset)}</span>
+            </div>
+            <div class="rest-time">
+                <span class="label">结束时间</span>
+                <span class="value">${formatTime(rest.end_offset)}</span>
+            </div>
+            <div class="rest-duration">
+                持续: ${rest.duration.toFixed(2)}s (${rest.beats.toFixed(1)}拍)
+            </div>
+        `;
+        
+        restDetailsContent.appendChild(restItem);
+        console.log(`空拍${index + 1} DOM已添加`);
+    });
+    
+    console.log('所有空拍详情已生成');
+}
+
+// 格式化时间显示（秒转为 分:秒.毫秒 格式）
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    return `${minutes}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+}
+
+// 在开始新播放时隐藏空拍详情
+function hideSignificantRests() {
+    const restDetailsSection = document.getElementById('restDetailsSection');
+    if (restDetailsSection) {
+        restDetailsSection.style.display = 'none';
+    }
+    const significantRestCount = document.getElementById('significantRestCount');
+    if (significantRestCount) {
+        significantRestCount.textContent = '-';
+    }
+}
