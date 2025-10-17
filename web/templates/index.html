@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>萨克斯自动演奏系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎷 萨克斯/唢呐自动演奏系统</h1>
+            <div class="instrument-switch">
+                <label class="switch-label">乐器选择:</label>
+                <div class="switch-container">
+                    <button id="sksBtn" class="instrument-btn active">萨克斯</button>
+                    <button id="snBtn" class="instrument-btn">唢呐（葫芦丝笛子）</button>
+                </div>
+            </div>
+        </header>
+        
+        <main>
+            <!-- 左侧：音乐文件列表 -->
+            <div class="left-panel">
+                <div class="search-section">
+                    <h3>📁 音乐文件</h3>
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="搜索音乐文件..." />
+                        <button id="searchBtn">🔍</button>
+                    </div>
+                </div>
+                
+                <div class="file-list">
+                    <div id="fileList" class="file-items">
+                        <!-- 文件列表将通过JavaScript动态加载 -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 右侧：控制面板 -->
+            <div class="right-panel">
+                <div class="control-section">
+                    <h3>🎮 演奏控制</h3>
+                    <div class="control-parameters">
+                        <div class="param-group">
+                            <label for="bpmInput">BPM（速度）:</label>
+                            <input type="number" id="bpmInput" min="30" max="300" placeholder="留空使用文件默认值" />
+                        </div>
+                        <div class="param-group">
+                            <label for="tonguingDelayInput">吐音延迟 (ms):</label>
+                            <input type="number" id="tonguingDelayInput" min="10" max="100" value="30" />
+                        </div>
+                    </div>
+                    <div class="control-buttons">
+                        <button id="startBtn" class="btn btn-primary">▶️ 开始演奏</button>
+                        <button id="pauseBtn" class="btn btn-warning" disabled>⏸️ 暂停演奏</button>
+                        <button id="stopBtn" class="btn btn-danger" disabled>⏹️ 停止演奏</button>
+                    </div>
+                </div>
+
+                <!-- 歌曲信息和时长 -->
+                <div class="song-info-section">
+                    <h3>🎵 歌曲信息</h3>
+                    <div class="song-info">
+                        <div class="info-item">
+                            <span class="label">歌曲时长:</span>
+                            <span id="songDuration" class="value">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">总音符数:</span>
+                            <span id="songTotalNotes" class="value">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">空拍数量:</span>
+                            <span id="songRestCount" class="value">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 可视化时间轴 -->
+                <div class="timeline-section">
+                    <h3>📊 演奏时间轴</h3>
+                    <div id="timelineCanvas" class="timeline-canvas">
+                        <div class="timeline-hint">选择歌曲后显示时间轴</div>
+                    </div>
+                </div>
+                
+                <div class="status-section">
+                    <h3>📊 演奏状态</h3>
+                    <div class="status-info">
+                        <div class="status-item">
+                            <span class="label">当前文件:</span>
+                            <span id="currentFile" class="value">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">播放进度:</span>
+                            <span id="progress" class="value">0%</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">当前音符:</span>
+                            <span id="currentNote" class="value">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">总音符数:</span>
+                            <span id="totalNotes" class="value">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">已播放时间:</span>
+                            <span id="elapsedTime" class="value">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">播放状态:</span>
+                            <span id="playStatus" class="value">未开始</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progressBar" class="progress-fill"></div>
+                    </div>
+                </div>
+                
+                <!-- 手动指法测试区域 -->
+                <div class="fingering-section">
+                    <h3>🎹 手动指法测试</h3>
+                    <div class="fingering-controls">
+                        <button id="loadFingeringsBtn" class="btn btn-info">🔄 加载指法</button>
+                        <div class="fingering-info">
+                            <span class="info-text">点击音符按钮发送对应指法</span>
+                        </div>
+                    </div>
+                    <div id="fingeringButtons" class="fingering-buttons">
+                        <!-- 指法按钮将通过JavaScript动态加载 -->
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- 底部：日志输出 -->
+        <div class="log-section">
+            <h3>📝 演奏日志</h3>
+            <div class="log-controls">
+                <button id="clearLogBtn" class="btn btn-secondary">🗑️ 清空日志</button>
+                <button id="autoScrollBtn" class="btn btn-secondary active">📜 自动滚动</button>
+            </div>
+            <div id="logContainer" class="log-container">
+                <div id="logContent" class="log-content">
+                    <!-- 日志内容将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 空拍编辑模态框 -->
+    <div id="restEditModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>编辑空拍时长</h3>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="rest-edit-info">
+                    <p>空拍位置: <span id="restPosition">-</span></p>
+                    <p>当前时长: <span id="restCurrentDuration">-</span> 拍</p>
+                </div>
+                <div class="rest-edit-input">
+                    <label for="restNewDuration">新时长（拍）:</label>
+                    <input type="number" id="restNewDuration" min="0.25" max="16" step="0.25" value="1" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="restSaveBtn" class="btn btn-primary">保存</button>
+                <button id="restCancelBtn" class="btn btn-secondary">取消</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
+

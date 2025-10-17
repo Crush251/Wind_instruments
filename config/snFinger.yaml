@@ -1,0 +1,108 @@
+# 葫芦丝和唢呐，笛子（笛子指法）映射配置 - 简洁数组格式
+# 统一按升调来配置，所以转换时需要将降调转换为升调
+fingering_map:
+  #低音区
+  - note: "G3"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Index", "Middle", "Ring"]
+
+  - note: "A3"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Index", "Middle"]
+
+  - note: "B3"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Index"]
+
+  #中音区（默认）
+  - note: "C4"
+    left: ["Index", "Middle", "Ring"]
+    right: []
+
+  - note: "D4"
+    left: ["Index", "Middle"]
+    right: []
+
+  - note: "E4"
+    left: ["Index"]
+    right: []
+
+  - note: "F4"
+    left: [ "Middle"]
+    right: []
+
+  - note: "G4"
+    left: [ "Middle", "Ring"]
+    right: ["Index", "Middle", "Ring"]
+
+  - note: "A4"
+    left: ["Middle", "Ring"]
+    right: ["Index", "Middle"]
+
+  - note: "B4"
+    left: ["Middle", "Ring"]
+    right: ["Index"]
+
+      # 高音区 (Thumb2)
+  - note: "C5"
+    left: ["Thumb2", "Index", "Middle", "Ring"]
+    right: []
+
+  - note: "D5"
+    left: ["Thumb2", "Index", "Middle"]
+    right: []
+
+  - note: "E5"
+    left: ["Thumb2", "Index"]
+    right: []
+
+  - note: "F5"
+    left: ["Thumb2", "Middle"]
+    right: []
+
+  - note: "G5"
+    left: ["Thumb2", "Middle", "Ring"]
+    right: ["Index", "Middle", "Ring"]
+
+  - note: "A5"
+    left: ["Thumb2", "Middle", "Ring"]
+    right: ["Index", "Middle"]
+
+  - note: "B5"
+    left: ["Thumb2", "Middle", "Ring"]
+    right: ["Index"]
+
+  # 倍高音区 (Thumb1)
+  - note: "C6"
+    left: ["Thumb1", "Index", "Middle", "Ring"]
+    right: []
+
+  - note: "D6"
+    left: ["Thumb1", "Index", "Middle"]
+    right: []
+
+  - note: "E6"
+    left: ["Thumb1", "Index"]
+    right: []
+
+  - note: "F6"
+    left: ["Thumb1", "Middle"]
+    right: []
+
+  - note: "G6"
+    left: ["Thumb1", "Middle", "Ring"]
+    right: ["Index", "Middle", "Ring"]
+
+  - note: "A6"
+    left: ["Thumb1", "Middle", "Ring"]
+    right: ["Index", "Middle"]
+
+  - note: "B6"
+    left: ["Thumb1", "Middle", "Ring"]
+    right: ["Index"]
+    
+  #空拍
+  - note: "NO"
+    left: []
+    right: []
+

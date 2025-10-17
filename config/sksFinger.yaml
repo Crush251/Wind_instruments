@@ -1,0 +1,96 @@
+# 萨克斯指法映射配置 - 简洁数组格式
+# 我们统一按升调来配置，所以需要将降调转换为升调
+fingering_map:
+  - note: "A#3"
+    left: ["Index", "Middle", "Ring", "Little"]
+    right: ["Index", "Middle", "Ring", "Little"]
+
+  - note: "C4"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Index", "Middle", "Ring", "Little"]
+
+  - note: "D4"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Index", "Middle", "Ring"]
+
+  - note: "E4"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Index", "Middle"]
+
+  - note: "F4"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Index"]
+
+  - note: "F#4"
+    left: ["Index", "Middle", "Ring"]
+    right: ["Middle"]
+
+  - note: "G4"
+    left: ["Index", "Middle", "Ring"]
+    right: []
+
+  - note: "A4"
+    left: ["Index", "Middle"]
+    right: []
+
+  - note: "A#4"
+    left: ["Index"]
+    right: ["Index"]
+
+  - note: "B4"
+    left: ["Index"]
+    right: []
+
+  - note: "C5"
+    left: ["Middle"]
+    right: []
+
+  - note: "C#5"
+    left: []
+    right: []
+
+  - note: "D5"
+    left: ["Thumb", "Index", "Middle", "Ring"]
+    right: ["Index", "Middle", "Ring"]
+
+
+  - note: "E5"
+    left: ["Thumb", "Index", "Middle", "Ring"]
+    right: ["Index", "Middle"]
+
+  - note: "F5"
+    left: ["Thumb", "Index", "Middle", "Ring"]
+    right: ["Index"]
+
+  - note: "F#5"
+    left: ["Thumb", "Index", "Middle", "Ring"]
+    right: ["Middle"]
+    
+  - note: "G5"
+    left: ["Thumb", "Index", "Middle", "Ring"]
+    right: []
+
+  - note: "A5"
+    left: ["Thumb", "Index", "Middle"]
+    right: []
+
+  - note: "A#5"
+    left: ["Thumb", "Index"]
+    right: ["Index"]
+
+  - note: "B5"
+    left: ["Thumb", "Index"]
+    right: []
+
+  - note: "C6"
+    left: ["Thumb", "Middle"]
+    right: []
+  
+  - note: "C#6"
+    left: ["Thumb"]
+    right: []
+
+      #空拍
+  - note: "NO"
+    left: []
+    right: []
