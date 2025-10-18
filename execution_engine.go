@@ -2,11 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 )
+
+// 特殊错误：用户停止播放
+var ErrUserStopped = errors.New("user stopped playback")
 
 ////////////////////////////////////////////////////////////////////////////////
 // 执行引擎 - 播放预计算的执行序列
@@ -84,8 +88,13 @@ func (ee *ExecutionEngine) Play() error {
 		// 检查停止信号
 		select {
 		case <-playbackController.stopChan:
-			fmt.Println("⏹️  收到停止信号")
-			return nil
+			fmt.Println("⏹️  收到停止信号，正在关闭气泵...")
+			// 立即关闭气泵
+			if globalPumpController != nil {
+				GlobalPumpOff()
+				fmt.Println("🔴 气泵已紧急关闭")
+			}
+			return ErrUserStopped
 		default:
 		}
 
@@ -217,9 +226,10 @@ func (ee *ExecutionEngine) PlayAsync() error {
 	playbackController.mutex.Lock()
 	playbackController.isRunning = true
 	playbackController.startTime = time.Now()
+	playbackController.instrument = ee.sequence.Meta.Instrument // 设置乐器类型
+	playbackController.config = ee.cfg                          // 设置配置
 	playbackController.status = PlaybackStatus{
 		IsPlaying:   true,
-		IsPaused:    false,
 		CurrentFile: ee.sequence.Meta.SourceFile,
 		CurrentNote: 0,
 		TotalNotes:  ee.sequence.Meta.TotalEvents,
@@ -229,6 +239,16 @@ func (ee *ExecutionEngine) PlayAsync() error {
 
 	// 开始播放
 	go func() {
+		defer func() {
+			// 确保播放结束时发送完成信号
+			select {
+			case playbackController.doneChan <- true:
+				fmt.Println("📢 播放goroutine: 已发送完成信号")
+			default:
+				fmt.Println("⚠️  播放goroutine: 完成信号通道已满")
+			}
+		}()
+
 		err := ee.Play()
 
 		// 播放结束处理 - 确保气泵关闭
@@ -251,12 +271,13 @@ func (ee *ExecutionEngine) PlayAsync() error {
 		for _, rest := range ee.restTimings {
 			if rest.IsSignificant {
 				startOffset := rest.StartTime.Sub(ee.actualStart).Seconds()
-				endOffset := rest.EndTime.Sub(ee.actualStart).Seconds()
+				// 修正结束时间：因为记录的是预切换时刻（80%处），需要除以0.8得到实际结束时间
+				endOffset := rest.EndTime.Sub(ee.actualStart).Seconds() / 0.8
 				significantRests = append(significantRests, RestTimingResponse{
 					StartOffset: startOffset,
 					EndOffset:   endOffset,
-					Duration:    rest.Duration,
-					Beats:       rest.Beats,
+					Duration:    rest.Duration / 0.8, //修正时长：因为记录的是预切换时刻（80%处），需要除以0.8得到实际时长
+					Beats:       rest.Beats / 0.8,    //修正拍数：因为记录的是预切换时刻（80%处），需要除以0.8得到实际拍数
 				})
 			}
 		}
@@ -265,7 +286,6 @@ func (ee *ExecutionEngine) PlayAsync() error {
 		playbackController.mutex.Lock()
 		playbackController.isRunning = false
 		playbackController.status.IsPlaying = false
-		playbackController.status.IsPaused = false
 		playbackController.status.Progress = 100
 		playbackController.status.TheoreticalDuration = theoreticalDuration
 		playbackController.status.ActualDuration = actualDuration
@@ -274,14 +294,15 @@ func (ee *ExecutionEngine) PlayAsync() error {
 		playbackController.mutex.Unlock()
 
 		if err != nil {
-			fmt.Printf("❌ 播放出错: %v\n", err)
+			if errors.Is(err, ErrUserStopped) {
+				fmt.Printf("⏹️  播放已被用户停止\n")
+			} else {
+				fmt.Printf("❌ 播放出错: %v\n", err)
+			}
 		} else {
 			fmt.Printf("✅ 播放完成，气泵已关闭\n")
 		}
 	}()
-	// 播放结束处理 - 确保气泵关闭
-	if globalPumpController != nil {
-		GlobalPumpOff()
-	}
+
 	return nil
 }

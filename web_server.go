@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -57,8 +58,6 @@ func (ws *WebServer) StartWebServer() {
 	r.GET("/api/files", ws.getMusicFiles)
 	r.GET("/api/timeline", ws.getTimeline)
 	r.POST("/api/timeline/update", ws.updateTimeline)
-	r.POST("/api/playback/start", ws.startPlayback)
-	r.POST("/api/playback/pause", ws.pausePlayback)
 	r.POST("/api/playback/stop", ws.stopPlayback)
 	r.GET("/api/playback/status", ws.getPlaybackStatus)
 	r.GET("/api/fingerings", ws.getFingeringMap)
@@ -194,119 +193,68 @@ func (ws *WebServer) getMusicFiles(c *gin.Context) {
 	})
 }
 
-// StartPlayback 开始演奏
-func (ws *WebServer) startPlayback(c *gin.Context) {
-	var request struct {
-		Filename      string  `json:"filename"`
-		Instrument    string  `json:"instrument"`     // "sks" 或 "sn"
-		BPM           float64 `json:"bpm"`            // 用户指定的BPM，0表示使用默认
-		TonguingDelay int     `json:"tonguing_delay"` // 吐音延迟时间（毫秒）
-	}
-
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
-		return
-	}
-
-	// 默认乐器类型
-	if request.Instrument == "" {
-		request.Instrument = "sks"
-	}
-
-	// 默认吐音延迟
-	if request.TonguingDelay <= 0 {
-		request.TonguingDelay = 30
-	}
-
-	// 检查是否已在演奏
-	playbackController.mutex.RLock()
-	isRunning := playbackController.isRunning
-	playbackController.mutex.RUnlock()
-
-	if isRunning {
-		c.JSON(http.StatusConflict, gin.H{"error": "演奏正在进行中，请先停止当前演奏"})
-		return
-	}
-
-	// 加载音乐文件
-	fpath := filepath.Join("trsmusic", request.Filename)
-	if err := ws.fileReader.CheckFileExists(fpath); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "音乐文件不存在"})
-		return
-	}
-
-	// 启动演奏
-	go func() {
-		startPerformanceAsyncWithParams(fpath, request.Instrument, request.BPM, request.TonguingDelay, ws.fileReader)
-	}()
-
-	c.JSON(http.StatusOK, gin.H{"message": "演奏已开始"})
-}
-
-// PausePlayback 暂停/恢复演奏
-func (ws *WebServer) pausePlayback(c *gin.Context) {
-	playbackController.mutex.RLock()
-	isRunning := playbackController.isRunning
-	isPaused := playbackController.status.IsPaused
-	playbackController.mutex.RUnlock()
-
-	if !isRunning {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "当前没有演奏在进行"})
-		return
-	}
-
-	if isPaused {
-		// 恢复演奏
-		select {
-		case playbackController.resumeChan <- true:
-		default:
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "演奏已恢复"})
-	} else {
-		// 暂停演奏
-		select {
-		case playbackController.pauseChan <- true:
-		default:
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "演奏已暂停"})
-	}
-}
-
-// StopPlayback 停止演奏
+// StopPlayback 停止演奏（同步等待版本，确保完全停止）
 func (ws *WebServer) stopPlayback(c *gin.Context) {
+	fmt.Println("🛑 === 开始停止流程 ===")
+
 	playbackController.mutex.RLock()
 	isRunning := playbackController.isRunning
 	instrument := playbackController.instrument
+	cfg := playbackController.config
 	playbackController.mutex.RUnlock()
 
-	// 发送停止信号（如果正在运行）
-	if isRunning {
-		select {
-		case playbackController.stopChan <- true:
-		default:
-		}
+	fmt.Printf("🔍 当前播放状态: isRunning=%v, instrument=%s\n", isRunning, instrument)
+
+	if !isRunning {
+		fmt.Println("ℹ️  没有正在运行的播放任务")
+		c.JSON(http.StatusOK, gin.H{"message": "演奏已停止"})
+		return
 	}
 
-	// 无论是否在运行，都确保气泵关闭
+	// 1. 立即关闭气泵（最优先）
 	if globalPumpController != nil {
-		GlobalPumpOff()
-		fmt.Println("🔴 停止按钮：气泵已关闭")
+		fmt.Println("🔴 步骤1: 立即关闭气泵（使用同步方式）...")
+		result := GlobalPumpOffSync()
+		fmt.Printf("✅ 气泵关闭命令已执行，响应: %s\n", result)
+	} else {
+		fmt.Println("⚠️  气泵控制器为nil（可能是串口未连接）")
 	}
 
-	// 执行预备手势（松开手指）
-	if playbackController.config.Ready.Enabled && instrument != "" {
+	// 2. 发送停止信号并等待播放goroutine真正结束
+	fmt.Println("📤 步骤2: 发送停止信号并等待播放完全停止...")
+	select {
+	case playbackController.stopChan <- true:
+		fmt.Println("✅ 停止信号已发送")
+	default:
+		fmt.Println("⚠️  停止信号通道已满")
+	}
+
+	// 等待播放goroutine真正结束（最多等待3秒）
+	fmt.Println("⏳ 等待播放goroutine完全退出...")
+	select {
+	case <-playbackController.doneChan:
+		fmt.Println("✅ 播放goroutine已完全退出")
+	case <-time.After(3 * time.Second):
+		fmt.Println("⚠️  等待超时（3秒），强制继续")
+	}
+
+	// 3. 执行预备手势（松开手指）
+	if instrument != "" {
+		fmt.Printf("🤲 步骤3: 执行预备手势（松开手指，乐器: %s）...\n", instrument)
 		readyController := NewReadyGestureController()
-		readyController.ExecuteReadyGesture(playbackController.config, instrument)
-		fmt.Println("🤲 停止按钮：执行预备手势")
+		readyController.ExecuteReadyGesture(cfg, instrument)
+		fmt.Println("✅ 预备手势执行完成")
+	} else {
+		fmt.Println("⚠️  乐器类型为空，无法执行预备手势")
 	}
 
-	// 更新状态
+	// 4. 更新状态
 	playbackController.mutex.Lock()
 	playbackController.isRunning = false
 	playbackController.status.IsPlaying = false
-	playbackController.status.IsPaused = false
 	playbackController.mutex.Unlock()
 
+	fmt.Println("✅ === 停止流程完成，可以安全启动新播放 ===")
 	c.JSON(http.StatusOK, gin.H{"message": "演奏已停止"})
 }
 
@@ -521,10 +469,25 @@ func (ws *WebServer) playExecSequence(c *gin.Context) {
 
 	// 停止当前播放（如果有）
 	if playbackController.isRunning {
+		fmt.Println("⚠️  检测到正在播放，先停止旧的播放任务...")
 		select {
 		case playbackController.stopChan <- true:
+			fmt.Println("✅ 停止信号已发送")
 		default:
+			fmt.Println("⚠️  停止信号通道已满")
 		}
+
+		// 等待旧播放完全停止
+		fmt.Println("⏳ 等待旧播放完全停止...")
+		select {
+		case <-playbackController.doneChan:
+			fmt.Println("✅ 旧播放已完全停止")
+		case <-time.After(2 * time.Second):
+			fmt.Println("⚠️  等待超时（2秒），强制继续")
+		}
+
+		// 短暂延迟确保资源释放
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// 加载配置

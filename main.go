@@ -37,10 +37,16 @@ func main() {
 		help          = flag.Bool("help", false, "显示帮助信息")
 		preprocess    = flag.Bool("preprocess", false, "预处理模式：生成执行序列文件")
 		outputFile    = flag.String("out", "", "预处理输出文件路径 (例: trsmusic/test.exec.json)")
-		execFile      = flag.String("exec", "", "执行预计算的序列文件 (例: trsmusic/test.exec.json)")
+		execFile      = flag.String("exec", "", "执行预计算的序列文件 (例: exec/test.exec.json)")
+		jsonFile      = flag.String("json", "", "执行预计算的序列文件 (例: exec/test.exec.json) [-json 等同于 -exec]")
 	)
 
 	flag.Parse()
+
+	// 处理 -json 和 -exec 参数（-json 优先级更高）
+	if *jsonFile != "" {
+		*execFile = *jsonFile
+	}
 
 	if *help {
 		cliExecutor := NewCLIExecutor()
@@ -299,7 +305,6 @@ func startPerformanceAsyncWithParams(fpath string, instrument string, bpmOverrid
 	playbackController.startTime = time.Now()
 	playbackController.status = PlaybackStatus{
 		IsPlaying:   true,
-		IsPaused:    false,
 		CurrentFile: filepath.Base(fpath),
 		CurrentNote: 0,
 		TotalNotes:  len(events),
@@ -325,7 +330,6 @@ func startPerformanceAsyncWithParams(fpath string, instrument string, bpmOverrid
 	playbackController.mutex.Lock()
 	playbackController.isRunning = false
 	playbackController.status.IsPlaying = false
-	playbackController.status.IsPaused = false
 	playbackController.status.Progress = 100
 	playbackController.status.CurrentFile = ""
 	playbackController.status.CurrentNote = 0
@@ -500,17 +504,12 @@ func (pe *PerformanceEngine) checkControlSignals() bool {
 		playbackController.isRunning = false
 		playbackController.status.IsPlaying = false
 		playbackController.mutex.Unlock()
+		// 立即关闭气泵
+		if globalPumpController != nil {
+			GlobalPumpOff()
+			fmt.Println("🔴 收到停止信号，气泵已关闭")
+		}
 		return true
-	case <-playbackController.pauseChan:
-		playbackController.mutex.Lock()
-		playbackController.status.IsPaused = true
-		playbackController.mutex.Unlock()
-
-		<-playbackController.resumeChan
-
-		playbackController.mutex.Lock()
-		playbackController.status.IsPaused = false
-		playbackController.mutex.Unlock()
 	default:
 	}
 	return false

@@ -53,18 +53,11 @@
                         </div>
                     </div>
                     <div class="preprocess-section">
-                        <div class="preprocess-option">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="useCacheCheckbox" checked />
-                                使用缓存（自动检测已预处理的文件）
-                            </label>
-                        </div>
-                        <button id="preprocessBtn" class="btn btn-secondary">🔄 预处理生成执行序列</button>
-                        <div id="preprocessStatus" class="preprocess-status"></div>
+                        <button id="preprocessBtn" class="btn btn-secondary">🔄 手动预处理</button>
+                        <div id="preprocessStatus" class="preprocess-status info">ℹ️ 系统将自动检测并使用预处理文件，如未找到会自动生成</div>
                     </div>
                     <div class="control-buttons">
                         <button id="startBtn" class="btn btn-primary">▶️ 开始演奏</button>
-                        <button id="pauseBtn" class="btn btn-warning" disabled>⏸️ 暂停演奏</button>
                         <button id="stopBtn" class="btn btn-danger" disabled>⏹️ 停止演奏</button>
                     </div>
                 </div>

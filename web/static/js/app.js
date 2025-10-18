@@ -1,7 +1,6 @@
 // 全局变量
 let selectedFile = null;
 let isPlaying = false;
-let isPaused = false;
 let autoScroll = true;
 let statusUpdateInterval = null;
 let logUpdateInterval = null;
@@ -9,34 +8,36 @@ let currentInstrument = 'sks'; // 当前选择的乐器：sks(萨克斯) 或 sn(
 let currentTimeline = null; // 当前加载的时间轴数据
 let editingRestIndex = -1; // 正在编辑的空拍索引
 
-// DOM元素
-const searchInput = document.getElementById('searchInput');
-const searchBtn = document.getElementById('searchBtn');
-const fileList = document.getElementById('fileList');
-const startBtn = document.getElementById('startBtn');
-const pauseBtn = document.getElementById('pauseBtn');
-const stopBtn = document.getElementById('stopBtn');
-const clearLogBtn = document.getElementById('clearLogBtn');
-const autoScrollBtn = document.getElementById('autoScrollBtn');
-const logContent = document.getElementById('logContent');
-const loadFingeringsBtn = document.getElementById('loadFingeringsBtn');
-const fingeringButtonsEl = document.getElementById('fingeringButtons');
-
-// 乐器切换元素
-const sksBtn = document.getElementById('sksBtn');
-const snBtn = document.getElementById('snBtn');
-
-// 状态显示元素
-const currentFileEl = document.getElementById('currentFile');
-const progressEl = document.getElementById('progress');
-const currentNoteEl = document.getElementById('currentNote');
-const totalNotesEl = document.getElementById('totalNotes');
-const elapsedTimeEl = document.getElementById('elapsedTime');
-const playStatusEl = document.getElementById('playStatus');
-const progressBarEl = document.getElementById('progressBar');
+// DOM元素（在DOMContentLoaded后初始化）
+let searchInput, searchBtn, fileList, startBtn, stopBtn;
+let clearLogBtn, autoScrollBtn, logContent, loadFingeringsBtn, fingeringButtonsEl;
+let sksBtn, snBtn;
+let currentFileEl, progressEl, currentNoteEl, totalNotesEl;
+let elapsedTimeEl, playStatusEl, progressBarEl;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
+    // 初始化DOM元素引用
+    searchInput = document.getElementById('searchInput');
+    searchBtn = document.getElementById('searchBtn');
+    fileList = document.getElementById('fileList');
+    startBtn = document.getElementById('startBtn');
+    stopBtn = document.getElementById('stopBtn');
+    clearLogBtn = document.getElementById('clearLogBtn');
+    autoScrollBtn = document.getElementById('autoScrollBtn');
+    logContent = document.getElementById('logContent');
+    loadFingeringsBtn = document.getElementById('loadFingeringsBtn');
+    fingeringButtonsEl = document.getElementById('fingeringButtons');
+    sksBtn = document.getElementById('sksBtn');
+    snBtn = document.getElementById('snBtn');
+    currentFileEl = document.getElementById('currentFile');
+    progressEl = document.getElementById('progress');
+    currentNoteEl = document.getElementById('currentNote');
+    totalNotesEl = document.getElementById('totalNotes');
+    elapsedTimeEl = document.getElementById('elapsedTime');
+    playStatusEl = document.getElementById('playStatus');
+    progressBarEl = document.getElementById('progressBar');
+    
     loadMusicFiles();
     setupEventListeners();
     startStatusUpdates();
@@ -68,7 +69,6 @@ function setupEventListeners() {
     
     // 控制按钮
     startBtn.addEventListener('click', startPlayback);
-    pauseBtn.addEventListener('click', pausePlayback);
     stopBtn.addEventListener('click', stopPlayback);
     
     // 日志控制
@@ -163,7 +163,7 @@ function updateStartButtonState() {
     startBtn.disabled = !selectedFile || isPlaying;
 }
 
-// 开始演奏
+// 开始演奏（强制使用预计算模式）
 async function startPlayback() {
     if (!selectedFile || isPlaying) return;
     
@@ -185,50 +185,28 @@ async function startPlayback() {
         const bpm = bpmInput.value ? parseFloat(bpmInput.value) : 0;
         const tonguingDelay = parseInt(tonguingDelayInput.value) || 30;
         
-        // 检查是否使用缓存模式
-        const useCache = document.getElementById('useCacheCheckbox')?.checked;
-        
-        if (useCache && currentExecFile) {
-            // 使用预计算执行序列播放
-            const success = await playExecSequence();
-            if (success) {
-                isPlaying = true;
-                isPaused = false;
-                updateButtonStates();
-                startTimer();
-            } else {
+        // 检查是否已有预计算文件
+        if (!currentExecFile) {
+            // 没有预计算文件，自动进行预处理
+            showNotification('提示', '正在自动预处理...', 'info');
+            updatePreprocessStatus('🔄 自动预处理中...', 'loading');
+            
+            const preprocessSuccess = await preprocessAndWait(bpm, tonguingDelay);
+            if (!preprocessSuccess) {
                 startBtn.disabled = false;
+                return;
             }
-            return;
         }
         
-        // 传统播放模式
-        const response = await fetch('/api/playback/start', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                filename: selectedFile.filename,
-                instrument: currentInstrument,
-                bpm: bpm,
-                tonguing_delay: tonguingDelay
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.error) {
-            showNotification('错误', data.error, 'error');
+        // 使用预计算执行序列播放
+        const success = await playExecSequence();
+        if (success) {
+            isPlaying = true;
+            updateButtonStates();
+            startTimer();
+        } else {
             startBtn.disabled = false;
-            return;
         }
-        
-        isPlaying = true;
-        isPaused = false;
-        updateButtonStates();
-        showNotification('成功', '演奏已开始', 'success');
-        startTimer();
         
     } catch (error) {
         console.error('开始演奏失败:', error);
@@ -237,32 +215,38 @@ async function startPlayback() {
     }
 }
 
-// 暂停/恢复演奏
-async function pausePlayback() {
-    if (!isPlaying) return;
-    
+// 预处理并等待完成
+async function preprocessAndWait(bpm, tonguingDelay) {
     try {
-        const response = await fetch('/api/playback/pause', {
+        const response = await fetch('/api/preprocess', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                source_file: selectedFile.file_path || selectedFile.filename,
+                instrument: currentInstrument,
+                bpm: bpm,
+                tonguing_delay: tonguingDelay
+            })
         });
         
         const data = await response.json();
         
-        if (data.error) {
-            showNotification('错误', data.error, 'error');
-            return;
+        if (response.ok) {
+            currentExecFile = data.exec_file;
+            theoreticalDuration = data.duration_sec;
+            updatePreprocessStatus(`✅ 自动预处理完成！时长: ${data.duration_sec.toFixed(2)}秒`, 'success');
+            updateSongDuration(data.duration_sec);
+            return true;
+        } else {
+            updatePreprocessStatus(`❌ 预处理失败: ${data.error}`, 'error');
+            showNotification('错误', `预处理失败: ${data.error}`, 'error');
+            return false;
         }
-        
-        isPaused = !isPaused;
-        updateButtonStates();
-        showNotification('成功', data.message, 'success');
-        
     } catch (error) {
-        console.error('暂停演奏失败:', error);
-        showNotification('错误', '暂停演奏失败，请检查网络连接', 'error');
+        console.error('预处理失败:', error);
+        updatePreprocessStatus('❌ 预处理失败: 网络错误', 'error');
+        showNotification('错误', '预处理失败: 网络错误', 'error');
+        return false;
     }
 }
 
@@ -286,7 +270,6 @@ async function stopPlayback() {
         }
         
         isPlaying = false;
-        isPaused = false;
         // 不清除selectedFile，这样可以直接重新开始
         updateButtonStates();
         // 不调用 resetStatus()，保留最终计时结果显示
@@ -302,16 +285,7 @@ async function stopPlayback() {
 // 更新按钮状态
 function updateButtonStates() {
     startBtn.disabled = isPlaying;
-    pauseBtn.disabled = !isPlaying;
     stopBtn.disabled = !isPlaying;
-    
-    if (isPlaying) {
-        if (isPaused) {
-            pauseBtn.textContent = '▶️ 恢复演奏';
-        } else {
-            pauseBtn.textContent = '⏸️ 暂停演奏';
-        }
-    }
 }
 
 // 重置状态显示
@@ -343,7 +317,7 @@ async function updateStatus() {
 		elapsedTimeEl.textContent = status.elapsed_time || '-';
 		
 		if (status.is_playing) {
-			playStatusEl.textContent = status.is_paused ? '已暂停' : '播放中';
+			playStatusEl.textContent = '播放中';
 		} else {
 			playStatusEl.textContent = '未开始';
 		}
@@ -353,7 +327,6 @@ async function updateStatus() {
 		// 检查演奏是否已结束，如果是则重置前端状态并显示空拍信息
 		if (!status.is_playing && isPlaying) {
 			isPlaying = false;
-			isPaused = false;
 			updateButtonStates();
 			updateStartButtonState();
 			pauseTimerAtEnd(); // 暂停计时器但保留最终显示
@@ -952,13 +925,6 @@ function initPreprocessButton() {
 async function checkExecCache() {
     if (!selectedFile) return;
     
-    const useCache = document.getElementById('useCacheCheckbox')?.checked;
-    if (!useCache) {
-        currentExecFile = null;
-        updatePreprocessStatus('未使用缓存', 'info');
-        return;
-    }
-    
     const bpm = document.getElementById('bpmInput').value || '0';
     const tonguingDelay = document.getElementById('tonguingDelayInput').value || '30';
     const instrument = currentInstrument;
@@ -975,7 +941,7 @@ async function checkExecCache() {
             updateSongDuration(data.duration_sec);
         } else {
             currentExecFile = null;
-            updatePreprocessStatus('⚠️ 未找到缓存，需要预处理', 'warning');
+            updatePreprocessStatus('ℹ️ 未找到缓存，点击开始将自动生成', 'info');
         }
     } catch (error) {
         console.error('检查缓存失败:', error);

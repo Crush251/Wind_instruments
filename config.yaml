@@ -6,46 +6,44 @@ fingering_yaml: "config/sksFinger.yaml"
 bpm: 0
 # 本地 CAN 转发服务
 can_bridge_url: "http://localhost:5260"
-
 # 调试：true 时只打印帧，不发
 dry_run: false
 # 左/右手 CAN 接口与 ID
 hands:
-  left:
-    interface: "can2"
-    id: "0x28"
-  right:
-    interface: "can3"
-    id: "0x27"
+    left:
+        interface: can3
+        id: "0x28"
+    right:
+        interface: can2
+        id: "0x27"
 
-# 气泵控制（仅串口）
+arms:
+    can0:
+        device_name: left_black_arm
+    can1:
+        device_name: right_black_arm
+# 气泵
 pump:
-  port_name: /dev/ttyUSB0
-  
+    port_name: /dev/ttyUSB0
+
 # 预备手势：开演前对左右手下发一帧"全释放姿态"（即 release_profile），等待 hold_ms 再开始
 ready:
-  enabled: true
-  hold_ms: 300
-
+    enabled: true
+    hold_ms: 300
 # 逐指"按压/松开"幅度（0~255），顺序：拇指, 拇指旋转, 食指, 中指, 无名指, 小指
 sks_left_press_profile: [141, 25, 255, 255, 255, 255] # 255 * 0.7 ≈ 178（你要求的按压值）
 sks_left_release_profile: [255, 255, 255, 255, 255, 255] # 你要求松开=255
 sks_right_press_profile: [171, 18, 222, 219, 215, 224] # 255 * 0.7 ≈ 178（你要求的按压值）
 sks_right_release_profile: [171, 18, 255, 255, 255, 255] # 你要求松开=255
 #默认中音
-sn_left_press_profile: [116, 56, 239, 233, 232, 255]
-sn_left_release_profile: [116, 56, 255, 254, 252, 255]
+sn_left_press_profile: [151, 19, 232, 233, 235, 255]
+sn_left_release_profile: [151, 19, 255, 255, 255, 255]
 #高音,修改默认中音左手的的前两位，对应Thumb2
-sn_left_high_Thumb: [96, 56, 239, 233, 232, 255]
+sn_left_high_Thumb: [131, 19, 255, 255, 255, 255]
 #倍高音，修改默认中音的前两位。对应Thumb1
 sn_left_high_pro_Thumb: [110, 43]
-sn_right_press_profile: [0, 255, 230, 222, 236, 255]
-sn_right_release_profile: [0, 255, 255, 241, 253, 255]
-arms:
-    can0:
-        device_name: left_black_arm
-    can1:
-        device_name: right_black_arm
+sn_right_press_profile: [0, 255, 233, 230, 238, 255]
+sn_right_release_profile: [0, 255, 255, 255, 255, 255]
 
 # 防止手撞击杆的预动作
 handsleft: [255, 100, 255, 255, 255, 255]

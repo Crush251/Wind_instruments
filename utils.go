@@ -130,6 +130,24 @@ func GlobalPumpSend(cmd string) string {
 	return "OK"
 }
 
+// GlobalPumpSendSync 发送气泵命令（同步版本，等待响应，确保命令执行）
+func GlobalPumpSendSync(cmd string) string {
+	if globalPumpController == nil || globalPumpController.port == nil {
+		return "气泵控制器未初始化"
+	}
+
+	if !strings.HasSuffix(cmd, "\n") {
+		cmd += "\n"
+	}
+	globalPumpController.port.Write([]byte(cmd))
+
+	// 等待足够时间让命令执行
+	time.Sleep(50 * time.Millisecond)
+	buf := make([]byte, 1024)
+	n, _ := globalPumpController.port.Read(buf)
+	return string(buf[:n])
+}
+
 // PumpSend 发送气泵命令（实例版本，已废弃）
 func (u *Utils) PumpSend(cmd string) string {
 	return GlobalPumpSend(cmd)
@@ -149,6 +167,9 @@ func GlobalPumpOn() string { return GlobalPumpSend("on") }
 
 // GlobalPumpOff 关闭气泵（全局版本）
 func GlobalPumpOff() string { return GlobalPumpSend("off") }
+
+// GlobalPumpOffSync 关闭气泵（同步版本，确保命令执行）
+func GlobalPumpOffSync() string { return GlobalPumpSendSync("off") }
 
 // GlobalPumpSetPWM 设置气泵PWM值（全局版本）
 func GlobalPumpSetPWM(value int) string {

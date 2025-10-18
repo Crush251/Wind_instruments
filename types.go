@@ -92,7 +92,6 @@ type MusicFileInfo struct {
 // 演奏状态
 type PlaybackStatus struct {
 	IsPlaying           bool                 `json:"is_playing"`           // 是否正在演奏
-	IsPaused            bool                 `json:"is_paused"`            // 是否暂停
 	CurrentFile         string               `json:"current_file"`         // 当前文件
 	CurrentNote         int                  `json:"current_note"`         // 当前音符索引
 	TotalNotes          int                  `json:"total_notes"`          // 总音符数
@@ -117,8 +116,7 @@ type PlaybackController struct {
 	mutex        sync.RWMutex
 	status       PlaybackStatus
 	stopChan     chan bool
-	pauseChan    chan bool
-	resumeChan   chan bool
+	doneChan     chan bool // 播放完成信号
 	isRunning    bool
 	config       Config
 	timeline     TimelineFile
