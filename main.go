@@ -64,11 +64,6 @@ func main() {
 			fmt.Println("❌ 错误: 预处理模式需要指定输入文件 (-in)")
 			os.Exit(1)
 		}
-		if *outputFile == "" {
-			// 自动生成输出文件名
-			inputStr := *inputFile
-			*outputFile = inputStr[:len(inputStr)-5] + ".exec.json"
-		}
 
 		// 加载指法映射
 		fingeringMap := fileReader.LoadFingeringMapByInstrument(*instrument)
@@ -80,6 +75,26 @@ func main() {
 			if bpm <= 0 {
 				bpm = 60 // 默认BPM
 			}
+		}
+
+		// 自动生成输出文件名（如果未指定）
+		if *outputFile == "" {
+			// 确保 exec 目录存在
+			if err := os.MkdirAll("exec", 0755); err != nil {
+				fmt.Printf("❌ 错误: 创建 exec 目录失败: %v\n", err)
+				os.Exit(1)
+			}
+
+			// 从输入文件路径提取基础文件名（去掉路径和.json扩展名）
+			baseFilename := filepath.Base(*inputFile)
+			baseFilename = baseFilename[:len(baseFilename)-5] // 移除 .json
+
+			// 生成格式：原文件名_乐器类型_BPM_吐音延迟.exec.json
+			// 例如：青花瓷-葫芦丝-4min-108_sn_108_30.exec.json
+			*outputFile = fmt.Sprintf("exec/%s_%s_%.0f_%d.exec.json",
+				baseFilename, *instrument, bpm, *tonguingDelay)
+
+			fmt.Printf("📝 自动生成输出文件名: %s\n", *outputFile)
 		}
 
 		// 创建预处理器
