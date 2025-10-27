@@ -172,14 +172,15 @@ func (ee *ExecutionEngine) Play() error {
 
 // sendFramesAsync 异步发送所有CAN帧和串口命令
 func (ee *ExecutionEngine) sendFramesAsync(event ExecutionEvent) {
-	// 异步发送所有CAN帧（指法）
-	for _, frame := range event.Frames {
-		go ee.sendSingleFrame(frame)
-	}
-
 	// 异步执行串口气泵控制
 	if event.SerialCmd != "" {
 		go ee.sendSerialCmd(event.SerialCmd)
+	}
+
+	// 异步发送所有CAN帧（指法）
+	// len(nil) 返回 0，所以不需要显式检查 nil
+	for _, frame := range event.Frames {
+		go ee.sendSingleFrame(frame)
 	}
 }
 

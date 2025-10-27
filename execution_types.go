@@ -31,7 +31,7 @@ type ExecutionEvent struct {
 	TimestampMS float64        `json:"t"`                // 绝对时间戳（毫秒）
 	DurationMS  float64        `json:"d"`                // 持续时长（毫秒）
 	Note        string         `json:"n"`                // 音符名称（调试用）
-	Frames      []ExecCANFrame `json:"frames"`           // CAN帧数组
+	Frames      []ExecCANFrame `json:"frames,omitempty"` // CAN帧数组（为空时省略）
 	SerialCmd   string         `json:"serial,omitempty"` // 串口命令（"on"/"off"）
 }
 

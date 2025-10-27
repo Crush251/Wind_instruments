@@ -114,6 +114,7 @@ func (sp *SequencePreprocessor) generateSequence(events []NoteEvent, sourceFile 
 
 	currentTimeMS := 0.0
 	rightCompensation := 0.0 // 从上一个音符继承的右侧补偿
+	isFirstNote := true      // 标记是否为第一个音符（需要开启气泵）
 
 	for i, event := range events {
 		baseDurationMS := sp.secondsPerBeat * event.Duration * 1000.0
@@ -128,6 +129,7 @@ func (sp *SequencePreprocessor) generateSequence(events []NoteEvent, sourceFile 
 			sequence.Events = append(sequence.Events, execEvents...)
 			currentTimeMS += baseDurationMS
 			rightCompensation = 0.0 // 空拍后重置补偿
+			isFirstNote = true      // 空拍后下一个音符需要开启气泵
 
 		} else {
 			// 检查上一个和下一个音符是否与当前音符相同
@@ -187,20 +189,22 @@ func (sp *SequencePreprocessor) generateSequence(events []NoteEvent, sourceFile 
 				// 新音符或首次出现
 				if nextIsSame {
 					// 下一个相同，生成吐音开始
-					execEvents, err := sp.generateTonguingStart(currentTimeMS, playDurationMS, event, nextIsSame)
+					execEvents, err := sp.generateTonguingStart(currentTimeMS, playDurationMS, event, nextIsSame, isFirstNote)
 					if err != nil {
 						return nil, err
 					}
 					sequence.Events = append(sequence.Events, execEvents...)
 					currentTimeMS += playDurationMS + float64(sp.tonguingDelay)
+					isFirstNote = false // 已开启气泵
 				} else {
-					// 普通音符
-					execEvent, err := sp.generateNormalEvent(currentTimeMS, playDurationMS, event)
+					// 普通音符（不同音符切换）
+					execEvent, err := sp.generateNormalEvent(currentTimeMS, playDurationMS, event, isFirstNote)
 					if err != nil {
 						return nil, err
 					}
 					sequence.Events = append(sequence.Events, execEvent)
 					currentTimeMS += playDurationMS
+					isFirstNote = false // 已开启气泵
 				}
 			}
 		}
@@ -216,26 +220,33 @@ func (sp *SequencePreprocessor) generateSequence(events []NoteEvent, sourceFile 
 	return sequence, nil
 }
 
-// generateNormalEvent 生成普通音符事件
-func (sp *SequencePreprocessor) generateNormalEvent(timestampMS, durationMS float64, event NoteEvent) (ExecutionEvent, error) {
+// generateNormalEvent 生成普通音符事件（不同音符切换）
+// isFirstNote: 是否为第一个音符或空拍后的第一个音符，决定是否需要开启气泵
+func (sp *SequencePreprocessor) generateNormalEvent(timestampMS, durationMS float64, event NoteEvent, isFirstNote bool) (ExecutionEvent, error) {
 	frames, err := sp.buildFingeringFrames(event.Note)
 	if err != nil {
 		return ExecutionEvent{}, err
 	}
 
-	// 气泵通过串口控制
+	// 只有第一个音符或空拍后需要开启气泵，其他时候不控制气泵（保持开启状态）
+	serialCmd := ""
+	if isFirstNote {
+		serialCmd = "on"
+	}
+
 	return ExecutionEvent{
 		TimestampMS: timestampMS,
 		DurationMS:  durationMS,
 		Note:        event.Note,
 		Frames:      frames,
-		SerialCmd:   "on",
+		SerialCmd:   serialCmd, // 只有第一个音符才发送"on"，其他时候为空
 	}, nil
 }
 
 // generateTonguingStart 生成吐音开始事件（第一个相同音符）
-// 参数 nextIsSame: 下一个音符是否还是相同音符，决定是否添加吐音间隙
-func (sp *SequencePreprocessor) generateTonguingStart(timestampMS, playDurationMS float64, event NoteEvent, nextIsSame bool) ([]ExecutionEvent, error) {
+// nextIsSame: 下一个音符是否还是相同音符，决定是否添加吐音间隙
+// isFirstNote: 是否为第一个音符或空拍后的第一个音符，决定是否需要开启气泵
+func (sp *SequencePreprocessor) generateTonguingStart(timestampMS, playDurationMS float64, event NoteEvent, nextIsSame, isFirstNote bool) ([]ExecutionEvent, error) {
 	events := []ExecutionEvent{}
 
 	// 生成指法帧（第一个音符需要切换指法）
@@ -244,13 +255,19 @@ func (sp *SequencePreprocessor) generateTonguingStart(timestampMS, playDurationM
 		return nil, err
 	}
 
-	// 事件1: 切换指法 + 开启气泵
+	// 只有第一个音符或空拍后需要开启气泵，其他时候不控制气泵
+	serialCmd := ""
+	if isFirstNote {
+		serialCmd = "on"
+	}
+
+	// 事件1: 切换指法（+ 可能开启气泵）
 	events = append(events, ExecutionEvent{
 		TimestampMS: timestampMS,
 		DurationMS:  playDurationMS,
 		Note:        event.Note,
 		Frames:      frames, // ✅ 包含指法帧
-		SerialCmd:   "on",
+		SerialCmd:   serialCmd,
 	})
 
 	// 事件2: 关闭气泵（吐音间隙）- 仅当下一个音符还是相同时才添加
@@ -259,7 +276,7 @@ func (sp *SequencePreprocessor) generateTonguingStart(timestampMS, playDurationM
 			TimestampMS: timestampMS + playDurationMS,
 			DurationMS:  float64(sp.tonguingDelay),
 			Note:        "TONGUE",
-			Frames:      []ExecCANFrame{},
+			Frames:      nil, // nil 会在 JSON 中被省略（omitempty）
 			SerialCmd:   "off",
 		})
 	}
@@ -277,7 +294,7 @@ func (sp *SequencePreprocessor) generateTonguingContinuation(timestampMS, playDu
 		TimestampMS: timestampMS,
 		DurationMS:  playDurationMS,
 		Note:        event.Note,
-		Frames:      []ExecCANFrame{}, // 无CAN帧，指法已设置
+		Frames:      nil, // nil 会在 JSON 中被省略（omitempty），比空数组更简洁
 		SerialCmd:   "on",
 	})
 
@@ -287,7 +304,7 @@ func (sp *SequencePreprocessor) generateTonguingContinuation(timestampMS, playDu
 			TimestampMS: timestampMS + playDurationMS,
 			DurationMS:  float64(sp.tonguingDelay),
 			Note:        "TONGUE",
-			Frames:      []ExecCANFrame{},
+			Frames:      nil, // nil 会在 JSON 中被省略（omitempty）
 			SerialCmd:   "off",
 		})
 	}
