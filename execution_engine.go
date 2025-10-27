@@ -190,12 +190,24 @@ func (ee *ExecutionEngine) sendSingleFrame(frame ExecCANFrame) {
 		return
 	}
 
+	// 根据逻辑标识（left/right）映射到实际CAN接口
+	var canInterface string
+	switch frame.Hand {
+	case "left":
+		canInterface = ee.cfg.Hands.Left.Interface
+	case "right":
+		canInterface = ee.cfg.Hands.Right.Interface
+	default:
+		fmt.Printf("⚠️  警告: 未知的手部标识: %s\n", frame.Hand)
+		return
+	}
+
 	// 解析ID
 	var id uint32
 	fmt.Sscanf(frame.ID, "0x%X", &id)
 
 	// 使用异步发送
-	ee.utils.SendCanFrameAsync(ee.cfg, frame.Interface, id, frame.Data)
+	ee.utils.SendCanFrameAsync(ee.cfg, canInterface, id, frame.Data)
 }
 
 // sendSerialCmd 发送串口命令

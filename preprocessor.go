@@ -387,20 +387,20 @@ func (sp *SequencePreprocessor) buildFingeringFrames(note string) ([]ExecCANFram
 	leftFrame := fingeringBuilder.BuildFingerFrame(fingering.Left, leftPress, leftRelease, sp.cfg, sp.instrument)
 	rightFrame := fingeringBuilder.BuildFingerFrame(fingering.Right, rightPress, rightRelease, sp.cfg, sp.instrument)
 
-	// 转换为执行帧
+	// 转换为执行帧（使用逻辑标识 left/right，执行时映射到实际接口）
 	leftID := utils.ParseCanID(sp.cfg.Hands.Left.ID)
 	rightID := utils.ParseCanID(sp.cfg.Hands.Right.ID)
 
 	return []ExecCANFrame{
 		{
-			Interface: sp.cfg.Hands.Left.Interface,
-			ID:        fmt.Sprintf("0x%X", leftID),
-			Data:      leftFrame,
+			Hand: "left", // 逻辑标识
+			ID:   fmt.Sprintf("0x%X", leftID),
+			Data: leftFrame,
 		},
 		{
-			Interface: sp.cfg.Hands.Right.Interface,
-			ID:        fmt.Sprintf("0x%X", rightID),
-			Data:      rightFrame,
+			Hand: "right", // 逻辑标识
+			ID:   fmt.Sprintf("0x%X", rightID),
+			Data: rightFrame,
 		},
 	}, nil
 }
@@ -427,14 +427,14 @@ func (sp *SequencePreprocessor) buildReleaseFrames() []ExecCANFrame {
 
 	return []ExecCANFrame{
 		{
-			Interface: sp.cfg.Hands.Left.Interface,
-			ID:        fmt.Sprintf("0x%X", leftID),
-			Data:      leftFrame,
+			Hand: "left", // 逻辑标识
+			ID:   fmt.Sprintf("0x%X", leftID),
+			Data: leftFrame,
 		},
 		{
-			Interface: sp.cfg.Hands.Right.Interface,
-			ID:        fmt.Sprintf("0x%X", rightID),
-			Data:      rightFrame,
+			Hand: "right", // 逻辑标识
+			ID:   fmt.Sprintf("0x%X", rightID),
+			Data: rightFrame,
 		},
 	}
 }

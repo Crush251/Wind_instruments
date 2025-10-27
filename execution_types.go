@@ -37,7 +37,7 @@ type ExecutionEvent struct {
 
 // ExecCANFrame 执行用CAN帧（简化版）
 type ExecCANFrame struct {
-	Interface string `json:"i"`  // CAN接口名（如"can0"）
-	ID        string `json:"id"` // 设备ID（如"0x28"）
-	Data      []byte `json:"d"`  // 数据字节数组
+	Hand string `json:"hand"` // 手部标识：left/right（逻辑标识，执行时映射到实际接口）
+	ID   string `json:"id"`   // 设备ID（如"0x28"）
+	Data []byte `json:"d"`    // 数据字节数组
 }
