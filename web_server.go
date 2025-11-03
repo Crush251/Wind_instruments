@@ -1,8 +1,11 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"html/template"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +13,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+//go:embed web/static web/templates
+var staticFiles embed.FS
 
 ////////////////////////////////////////////////////////////////////////////////
 // Web服务模块
@@ -68,9 +74,13 @@ func (ws *WebServer) StartWebServer() {
 	r.GET("/api/exec/check", ws.checkExecFile)
 	r.POST("/api/exec/play", ws.playExecSequence)
 
-	// 静态文件服务（前端）
-	r.Static("/static", "./web/static")
-	r.LoadHTMLGlob("web/templates/*")
+	// 静态文件服务（使用 embed 嵌入的文件系统）
+	staticFS, _ := fs.Sub(staticFiles, "web/static")
+	r.StaticFS("/static", http.FS(staticFS))
+
+	// 模板服务（使用 embed 嵌入的文件系统）
+	templatesFS, _ := fs.Sub(staticFiles, "web/templates")
+	r.SetHTMLTemplate(ws.loadTemplates(templatesFS))
 
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.html", nil)
@@ -83,6 +93,33 @@ func (ws *WebServer) StartWebServer() {
 	if err := r.Run(":8088"); err != nil {
 		fmt.Printf("❌ Web服务启动失败: %v\n", err)
 	}
+}
+
+// loadTemplates 从嵌入的文件系统中加载模板
+func (ws *WebServer) loadTemplates(templatesFS fs.FS) *template.Template {
+	tmpl := template.New("")
+
+	// 遍历模板目录
+	fs.WalkDir(templatesFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".html" {
+			return nil
+		}
+
+		// 读取模板内容
+		content, err := fs.ReadFile(templatesFS, path)
+		if err != nil {
+			return err
+		}
+
+		// 解析模板
+		_, err = tmpl.New(filepath.Base(path)).Parse(string(content))
+		return err
+	})
+
+	return tmpl
 }
 
 // GetTimeline 获取歌曲时间轴数据
