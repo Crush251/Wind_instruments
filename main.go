@@ -54,7 +54,17 @@ func main() {
 	// 加载配置文件
 	fileReader := NewFileReader()
 	cfg := fileReader.LoadConfig(*configFile)
-
+	// 初始化气泵控制器（串口）
+	if cfg.Pump.PortName != "" {
+		fmt.Printf("🔧 正在初始化气泵控制器（串口）...\n")
+		if err := InitGlobalPumpController(cfg.Pump.PortName); err != nil {
+			fmt.Printf("❌ 气泵控制器初始化失败: %v\n", err)
+			//os.Exit(1)
+		}
+	} else {
+		fmt.Println("❌ 错误: 配置文件中未指定气泵串口")
+		os.Exit(1)
+	}
 	// === 预处理模式 ===
 	if *preprocess {
 		if *inputFile == "" {
