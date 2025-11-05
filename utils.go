@@ -117,15 +117,12 @@ func (u *Utils) ClosePumpController() {
 
 // GlobalPumpSend 发送气泵命令（异步版本，不等待响应，提高演奏速度）
 func GlobalPumpSend(cmd string) string {
-	if globalPumpController == nil || globalPumpController.port == nil {
-		return "气泵控制器未初始化"
-	}
 
 	if !strings.HasSuffix(cmd, "\n") {
 		cmd += "\n"
 	}
 	globalPumpController.port.Write([]byte(cmd))
-
+	//time.Sleep(10 * time.Millisecond)
 	// 演奏过程中不需要等待响应，立即返回以避免延迟累积
 	return "OK"
 }
@@ -142,7 +139,7 @@ func GlobalPumpSendSync(cmd string) string {
 	globalPumpController.port.Write([]byte(cmd))
 
 	// 等待足够时间让命令执行
-	time.Sleep(50 * time.Millisecond)
+	//time.Sleep(1 * time.Millisecond)
 	buf := make([]byte, 1024)
 	n, _ := globalPumpController.port.Read(buf)
 	return string(buf[:n])

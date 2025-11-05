@@ -14,11 +14,11 @@ hands:
         interface: can3
         id: "0x28"
     right:
-        interface: can2
+        interface: can0
         id: "0x27"
 
 arms:
-    can0:
+    can2:
         device_name: left_black_arm
     can1:
         device_name: right_black_arm

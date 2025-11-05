@@ -60,11 +60,3 @@ func (cli *CLIExecutor) PrintUsage() {
 	fmt.Println("        └─ 108: BPM (每分钟节拍数)")
 	fmt.Println("        └─ 30: 吐音延迟 (毫秒)")
 }
-
-// GetInstrumentName 获取乐器中文名称
-func getInstrumentName(instrument string) string {
-	if instrument == "sn" {
-		return "唢呐"
-	}
-	return "萨克斯"
-}

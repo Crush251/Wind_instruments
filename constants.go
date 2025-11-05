@@ -25,5 +25,5 @@ var fingerIndex = map[string]int{
 var playbackController = &PlaybackController{
 	stopChan:   make(chan bool, 1),
 	doneChan:   make(chan bool, 1),
-	instrument: "sks", // 默认为萨克斯
+	instrument: "sn", // 默认为唢呐
 }

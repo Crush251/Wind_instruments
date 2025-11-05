@@ -14,8 +14,8 @@
             <div class="instrument-switch">
                 <label class="switch-label">乐器选择:</label>
                 <div class="switch-container">
-                    <button id="sksBtn" class="instrument-btn active">萨克斯</button>
-                    <button id="snBtn" class="instrument-btn">唢呐（葫芦丝笛子）</button>
+                    <button id="sksBtn" class="instrument-btn ">萨克斯</button>
+                    <button id="snBtn" class="instrument-btn active">唢呐（葫芦丝笛子）</button>
                 </div>
             </div>
         </header>
@@ -52,6 +52,20 @@
                             <input type="number" id="tonguingDelayInput" min="10" max="100" value="30" />
                         </div>
                     </div>
+                    
+                    <!-- 气泵调试 -->
+                    <div class="pump-debug-section">
+                        <label for="pumpDebugInput">🔧 气泵调试:</label>
+                        <div class="pump-debug-controls">
+                            <input type="text" id="pumpDebugInput" placeholder="输入命令（如：on, off, set100）" />
+                            <button id="pumpDebugBtn" class="btn btn-warning">发送</button>
+                            <button id="pumpOnBtn" class="btn btn-warning">on</button>
+                            <button id="pumpOffBtn" class="btn btn-warning">off</button>
+                        </div>
+                       
+                        <div id="pumpDebugStatus" class="pump-debug-status"></div>
+                    </div>
+                    
                     <div class="preprocess-section">
                         <button id="preprocessBtn" class="btn btn-secondary">🔄 手动预处理</button>
                         <div id="preprocessStatus" class="preprocess-status info">ℹ️ 系统将自动检测并使用预处理文件，如未找到会自动生成</div>

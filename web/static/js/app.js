@@ -4,7 +4,7 @@ let isPlaying = false;
 let autoScroll = true;
 let statusUpdateInterval = null;
 let logUpdateInterval = null;
-let currentInstrument = 'sks'; // 当前选择的乐器：sks(萨克斯) 或 sn(唢呐)
+let currentInstrument = 'sn'; // 当前选择的乐器：sks(萨克斯) 或 sn(唢呐)
 let currentTimeline = null; // 当前加载的时间轴数据
 let editingRestIndex = -1; // 正在编辑的空拍索引
 
@@ -85,6 +85,28 @@ function setupEventListeners() {
     snBtn.addEventListener('click', function() {
         switchInstrument('sn');
     });
+    
+    // 气泵调试按钮
+    const pumpDebugBtn = document.getElementById('pumpDebugBtn');
+    const pumpOnBtn = document.getElementById('pumpOnBtn');
+    const pumpOffBtn = document.getElementById('pumpOffBtn');
+    const pumpDebugInput = document.getElementById('pumpDebugInput');
+    if (pumpDebugBtn && pumpDebugInput) {
+        pumpDebugBtn.addEventListener('click', sendPumpDebugCommand);
+        pumpDebugInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendPumpDebugCommand();
+            }
+        });
+    }
+    if (pumpOnBtn && pumpOffBtn) {
+        pumpOnBtn.addEventListener('click', function() {
+            sendPumponAndOff('on');
+        });
+        pumpOffBtn.addEventListener('click', function() {
+            sendPumponAndOff('off');
+        });
+    }
 }
 
 // 加载音乐文件列表
@@ -686,6 +708,12 @@ async function loadSongTimeline(filename) {
         
         currentTimeline = data;
         
+        // 自动填充BPM输入框
+        const bpmInput = document.getElementById('bpmInput');
+        if (bpmInput && data.bpm) {
+            bpmInput.value = data.bpm;
+        }
+        
         // 更新歌曲信息显示
         updateSongInfo();
         
@@ -1192,4 +1220,75 @@ function hideSignificantRests() {
     if (significantRestCount) {
         significantRestCount.textContent = '-';
     }
+}
+//sendto气泵
+async function sendPumponAndOff(command) {
+    console.log('sendPumponAndOff 被调用，命令:', command);
+    const statusEl = document.getElementById('pumpDebugStatus');
+    const response = await fetch('/api/pump/debug', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ command: command })
+    });
+    const data = await response.json();
+    if (response.ok) {
+        statusEl.textContent = `✅ ${data.message}`;
+        statusEl.className = 'pump-debug-status success';
+    } else {
+        statusEl.textContent = `❌ ${data.error}${data.details ? ': ' + data.details : ''}`;
+        statusEl.className = 'pump-debug-status error';
+    }
+    setTimeout(() => {
+        statusEl.textContent = '';
+        statusEl.className = 'pump-debug-status';
+    }, 3000);
+}
+
+// 发送气泵调试命令
+async function sendPumpDebugCommand() {
+    const input = document.getElementById('pumpDebugInput');
+    const statusEl = document.getElementById('pumpDebugStatus');
+    const command = input.value.trim();
+    
+    if (!command) {
+        statusEl.textContent = '⚠️ 请输入命令';
+        statusEl.className = 'pump-debug-status warning';
+        return;
+    }
+    
+    try {
+        statusEl.textContent = '⏳ 发送中...';
+        statusEl.className = 'pump-debug-status info';
+        
+        const response = await fetch('/api/pump/debug', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            statusEl.textContent = `✅ ${data.message}`;
+            statusEl.className = 'pump-debug-status success';
+            input.value = ''; // 清空输入框
+        } else {
+            statusEl.textContent = `❌ ${data.error}${data.details ? ': ' + data.details : ''}`;
+            statusEl.className = 'pump-debug-status error';
+        }
+    } catch (error) {
+        console.error('发送气泵命令失败:', error);
+        statusEl.textContent = `❌ 发送失败: ${error.message}`;
+        statusEl.className = 'pump-debug-status error';
+    }
+    
+    // 3秒后清除状态
+    setTimeout(() => {
+        statusEl.textContent = '';
+        statusEl.className = 'pump-debug-status';
+    }, 3000);
 }

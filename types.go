@@ -136,17 +136,6 @@ type NoteEvent struct {
 	Index    int
 }
 
-// 演奏引擎
-type PerformanceEngine struct {
-	cfg            Config
-	fingeringMap   map[string]FingeringEntry
-	instrument     string
-	secondsPerBeat float64
-	lastThumbState string       // 追踪上一个音符的拇指状态：""、"Thumb1"、"Thumb2"
-	timeline       TimelineFile // 时间轴数据
-	tonguingDelay  int          // 吐音延迟时间（毫秒）
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // CAN通信相关结构体
 ////////////////////////////////////////////////////////////////////////////////

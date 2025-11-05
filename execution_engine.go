@@ -174,7 +174,7 @@ func (ee *ExecutionEngine) Play() error {
 func (ee *ExecutionEngine) sendFramesAsync(event ExecutionEvent) {
 	// 异步执行串口气泵控制
 	if event.SerialCmd != "" {
-		go ee.sendSerialCmd(event.SerialCmd)
+		ee.sendSerialCmd(event.SerialCmd)
 	}
 
 	// 异步发送所有CAN帧（指法）
@@ -215,6 +215,7 @@ func (ee *ExecutionEngine) sendSerialCmd(cmd string) {
 	if globalPumpController == nil {
 		return
 	}
+	fmt.Println("给气泵发送命令: ", cmd)
 
 	switch cmd {
 	case "on":

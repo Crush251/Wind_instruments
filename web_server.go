@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -74,11 +75,14 @@ func (ws *WebServer) StartWebServer() {
 	r.GET("/api/exec/check", ws.checkExecFile)
 	r.POST("/api/exec/play", ws.playExecSequence)
 
-	// 静态文件服务（使用 embed 嵌入的文件系统）
+	// 气泵调试API
+	r.POST("/api/pump/debug", ws.debugPumpCommand)
+
+	// 静态文件服务（使用嵌入的文件系统）
 	staticFS, _ := fs.Sub(staticFiles, "web/static")
 	r.StaticFS("/static", http.FS(staticFS))
 
-	// 模板服务（使用 embed 嵌入的文件系统）
+	// 模板加载（使用嵌入的文件系统）
 	templatesFS, _ := fs.Sub(staticFiles, "web/templates")
 	r.SetHTMLTemplate(ws.loadTemplates(templatesFS))
 
@@ -87,39 +91,12 @@ func (ws *WebServer) StartWebServer() {
 	})
 
 	fmt.Println("🎵 萨克斯/唢呐演奏Web服务启动成功!")
-	fmt.Println("🌐 访问地址: http://localhost:8088")
+	fmt.Println("🌐 访问地址: http://localhost:1105")
 
 	// 启动服务器
-	if err := r.Run(":8088"); err != nil {
+	if err := r.Run(":1105"); err != nil {
 		fmt.Printf("❌ Web服务启动失败: %v\n", err)
 	}
-}
-
-// loadTemplates 从嵌入的文件系统中加载模板
-func (ws *WebServer) loadTemplates(templatesFS fs.FS) *template.Template {
-	tmpl := template.New("")
-
-	// 遍历模板目录
-	fs.WalkDir(templatesFS, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || filepath.Ext(path) != ".html" {
-			return nil
-		}
-
-		// 读取模板内容
-		content, err := fs.ReadFile(templatesFS, path)
-		if err != nil {
-			return err
-		}
-
-		// 解析模板
-		_, err = tmpl.New(filepath.Base(path)).Parse(string(content))
-		return err
-	})
-
-	return tmpl
 }
 
 // GetTimeline 获取歌曲时间轴数据
@@ -308,7 +285,7 @@ func (ws *WebServer) getPlaybackStatus(c *gin.Context) {
 func (ws *WebServer) getFingeringMap(c *gin.Context) {
 	instrument := c.Query("instrument") // 获取乐器类型参数
 	if instrument == "" {
-		instrument = "sks" // 默认萨克斯
+		instrument = "sn" // 默认唢呐
 	}
 
 	fingeringMap := ws.fileReader.LoadFingeringMapByInstrument(instrument)
@@ -332,7 +309,7 @@ func (ws *WebServer) getFingeringMap(c *gin.Context) {
 func (ws *WebServer) sendSingleFingering(c *gin.Context) {
 	var request struct {
 		Note       string `json:"note"`
-		Instrument string `json:"instrument"` // "sks" 或 "sn"
+		Instrument string `json:"instrument"` // "sn" 或 "sks"
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -342,7 +319,7 @@ func (ws *WebServer) sendSingleFingering(c *gin.Context) {
 
 	// 默认乐器类型
 	if request.Instrument == "" {
-		request.Instrument = "sks"
+		request.Instrument = "sn"
 	}
 
 	// 加载配置和指法映射
@@ -548,5 +525,73 @@ func (ws *WebServer) playExecSequence(c *gin.Context) {
 		"exec_file":    request.ExecFile,
 		"total_events": engine.sequence.Meta.TotalEvents,
 		"duration_sec": engine.sequence.Meta.TotalDurationMS / 1000.0,
+	})
+}
+
+// loadTemplates 加载嵌入的模板文件
+func (ws *WebServer) loadTemplates(templatesFS fs.FS) *template.Template {
+	tmpl := template.New("")
+
+	fs.WalkDir(templatesFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".html") {
+			return nil
+		}
+
+		content, err := fs.ReadFile(templatesFS, path)
+		if err != nil {
+			return err
+		}
+
+		_, err = tmpl.New(filepath.Base(path)).Parse(string(content))
+		return err
+	})
+
+	return tmpl
+}
+
+// debugPumpCommand 处理气泵调试命令
+func (ws *WebServer) debugPumpCommand(c *gin.Context) {
+	var request struct {
+		Command string `json:"command"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求格式"})
+		return
+	}
+
+	if request.Command == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "命令不能为空"})
+		return
+	}
+
+	// 检查气泵控制器是否已初始化
+	if globalPumpController == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "气泵控制器未初始化"})
+		return
+	}
+
+	// 发送命令到串口
+	fmt.Printf("🔧 调试命令: %s\n", request.Command)
+
+	// 使用全局气泵控制器发送命令（同步版本，等待响应）
+	response := GlobalPumpSendSync(request.Command)
+
+	// 检查响应
+	if response == "气泵控制器未初始化" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "气泵控制器未初始化",
+			"details": response,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "命令发送成功",
+		"command":  request.Command,
+		"response": response,
 	})
 }

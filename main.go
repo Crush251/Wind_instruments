@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -105,20 +106,22 @@ func main() {
 
 		return
 	}
-
+	start := time.Now()
+	// 初始化气泵控制器（串口）
+	if cfg.Pump.PortName != "" {
+		fmt.Printf("🔧 正在初始化气泵控制器（串口）...\n")
+		if err := InitGlobalPumpController(cfg.Pump.PortName); err != nil {
+			fmt.Printf("❌ 气泵控制器初始化失败: %v\n", err)
+			//os.Exit(1)
+		}
+	} else {
+		fmt.Println("❌ 错误: 配置文件中未指定气泵串口")
+		os.Exit(1)
+	}
+	end := time.Now()
+	fmt.Printf("气泵控制器初始化时间: %v\n", end.Sub(start))
 	// === 执行预计算序列模式 ===
 	if *execFile != "" {
-		// 初始化气泵控制器（串口）
-		if cfg.Pump.PortName != "" {
-			fmt.Printf("🔧 正在初始化气泵控制器（串口）...\n")
-			if err := InitGlobalPumpController(cfg.Pump.PortName); err != nil {
-				fmt.Printf("❌ 气泵控制器初始化失败: %v\n", err)
-				//os.Exit(1)
-			}
-		} else {
-			fmt.Println("❌ 错误: 配置文件中未指定气泵串口")
-			os.Exit(1)
-		}
 
 		// 创建执行引擎
 		engine, err := NewExecutionEngine(*execFile, cfg)
@@ -177,17 +180,6 @@ func main() {
 
 		fmt.Println("✅ 预处理完成")
 		fmt.Println("🎵 第2步: 开始执行演奏...")
-
-		// 步骤2: 初始化气泵控制器
-		if cfg.Pump.PortName != "" {
-			fmt.Printf("🔧 正在初始化气泵控制器（串口）...\n")
-			if err := InitGlobalPumpController(cfg.Pump.PortName); err != nil {
-				fmt.Printf("❌ 气泵控制器初始化失败: %v\n", err)
-			}
-		} else {
-			fmt.Println("❌ 错误: 配置文件中未指定气泵串口")
-			os.Exit(1)
-		}
 
 		// 步骤3: 执行播放
 		engine, err := NewExecutionEngine(tempExecFile, cfg)

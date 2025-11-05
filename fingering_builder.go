@@ -153,10 +153,13 @@ func (fb *FingeringBuilder) BuildReleaseFrame(releaseProfile []int) []byte {
 // GetCurrentThumbState 获取当前音符的拇指状态
 func (fb *FingeringBuilder) GetCurrentThumbState(leftFingers []string) string {
 	for _, finger := range leftFingers {
-		if finger == "Thumb1" {
+		switch finger {
+		case "Thumb1":
 			return "Thumb1"
-		} else if finger == "Thumb2" {
+		case "Thumb2":
 			return "Thumb2"
+		default:
+			return ""
 		}
 	}
 	return "" // 没有高音拇指
@@ -168,26 +171,3 @@ func (fb *FingeringBuilder) NeedsSmoothThumbTransition(lastState, currentState s
 	return (lastState == "Thumb1" && currentState == "Thumb2") ||
 		(lastState == "Thumb2" && currentState == "Thumb1")
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
