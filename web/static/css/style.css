@@ -239,7 +239,144 @@ main {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+/* 配置面板样式 */
+.config-panel {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f7fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.config-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.config-header h3 {
+    margin: 0;
+    color: #2d3748;
+    font-size: 1.1rem;
+}
+
+.config-header .btn-sm {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    margin-left: 8px;
+}
+
+.config-display {
+    display: block;
+}
+
+.config-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.9rem;
+}
+
+.config-item:last-child {
+    border-bottom: none;
+}
+
+.config-label {
+    font-weight: 600;
+    color: #4a5568;
+    flex: 0 0 45%;
+}
+
+.config-value {
+    color: #2d3748;
+    flex: 1;
+    text-align: right;
+    word-break: break-all;
+}
+
+.config-divider {
+    height: 1px;
+    background-color: #cbd5e0;
+    margin: 10px 0;
+}
+
+.config-editor {
+    display: none;
+}
+
+.config-form-group {
+    margin-bottom: 12px;
+}
+
+.config-form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 5px;
+}
+
+.config-form-group input[type="text"],
+.config-form-group input[type="number"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: border-color 0.3s ease;
+}
+
+.config-form-group input[type="text"]:focus,
+.config-form-group input[type="number"]:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.config-form-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.config-status {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    padding: 8px 10px;
+    border-radius: 4px;
+    white-space: pre-line;
+    line-height: 1.5;
+    transition: all 0.3s ease;
+}
+
+.config-status.success {
+    color: #22543d;
+    background-color: #c6f6d5;
+    border: 1px solid #68d391;
+}
+
+.config-status.error {
+    color: #742a2a;
+    background-color: #fed7d7;
+    border: 1px solid #fc8181;
+}
+
+.config-status.warning {
+    color: #744210;
+    background-color: #feebc8;
+    border: 1px solid #f6ad55;
+}
+
+.config-status.info {
+    color: #2c5282;
+    background-color: #bee3f8;
+    border: 1px solid #63b3ed;
+}
+
 /* 气泵调试样式 */
+
 .pump-debug-section {
     margin-bottom: 20px;
     padding: 15px;

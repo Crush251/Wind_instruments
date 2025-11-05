@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', function() {
     startStatusUpdates();
     startLogUpdates();
     loadFingerings(); // 自动加载指法
+    loadConfig(); // 自动加载配置
     
     // 初始化模态框事件监听
     initModalListeners();
@@ -85,6 +86,20 @@ function setupEventListeners() {
     snBtn.addEventListener('click', function() {
         switchInstrument('sn');
     });
+    
+    // 配置管理按钮
+    const editConfigBtn = document.getElementById('editConfigBtn');
+    const saveConfigBtn = document.getElementById('saveConfigBtn');
+    const cancelConfigBtn = document.getElementById('cancelConfigBtn');
+    if (editConfigBtn) {
+        editConfigBtn.addEventListener('click', editConfig);
+    }
+    if (saveConfigBtn) {
+        saveConfigBtn.addEventListener('click', saveConfig);
+    }
+    if (cancelConfigBtn) {
+        cancelConfigBtn.addEventListener('click', cancelConfigEdit);
+    }
     
     // 气泵调试按钮
     const pumpDebugBtn = document.getElementById('pumpDebugBtn');
@@ -647,6 +662,11 @@ function switchInstrument(instrument) {
     
     // 重新加载指法
     loadFingerings();
+    
+    // 重新渲染配置显示（根据当前乐器类型）
+    if (currentConfig) {
+        renderConfigDisplay(currentConfig);
+    }
     
     // 显示切换成功通知
     const instrumentName = instrument === 'sks' ? '萨克斯' : '唢呐（葫芦丝笛子）';
@@ -1221,6 +1241,304 @@ function hideSignificantRests() {
         significantRestCount.textContent = '-';
     }
 }
+// 当前配置数据
+let currentConfig = null;
+
+// 加载配置
+async function loadConfig() {
+    try {
+        const response = await fetch('/api/config');
+        const data = await response.json();
+        
+        if (response.ok && data.config) {
+            currentConfig = data.config;
+            renderConfigDisplay(data.config);
+        } else {
+            showNotification('错误', '加载配置失败', 'error');
+        }
+    } catch (error) {
+        console.error('加载配置失败:', error);
+        showNotification('错误', '加载配置失败: 网络错误', 'error');
+    }
+}
+//重新加载配置
+async function reloadConfig() {
+    await loadConfig();
+    try {
+        const response = await fetch('/api/config/reload');
+        const data = await response.json();
+        
+        if (response.ok && data.config) {
+            currentConfig = data.config;
+            renderConfigDisplay(data.config);
+        } else {
+            showNotification('错误', '重新加载配置失败', 'error');
+        }
+    } catch (error) {
+        console.error('重新加载配置失败:', error);
+        showNotification('错误', '重新加载配置失败: 网络错误', 'error');
+    }
+}
+// 渲染配置显示
+function renderConfigDisplay(config) {
+    const displayEl = document.getElementById('configDisplay');
+    if (!displayEl) return;
+    
+    const formatArray = (arr) => {
+        if (!arr || !Array.isArray(arr)) return '未配置';
+        return arr.join(', ');
+    };
+    
+    // 根据当前乐器类型显示对应配置
+    let html = '';
+    
+    if (currentInstrument === 'sn') {
+        // 唢呐配置
+        html = `
+            <div class="config-item">
+                <span class="config-label">左手按压力度:</span>
+                <span class="config-value">${formatArray(config.sn_left_press_profile)}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">左手释放力度:</span>
+                <span class="config-value">${formatArray(config.sn_left_release_profile)}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">右手按压力度:</span>
+                <span class="config-value">${formatArray(config.sn_right_press_profile)}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">右手释放力度:</span>
+                <span class="config-value">${formatArray(config.sn_right_release_profile)}</span>
+            </div>
+            <div class="config-divider"></div>
+            <div class="config-item">
+                <span class="config-label">高音Thumb2:</span>
+                <span class="config-value">${formatArray(config.sn_left_high_Thumb)}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">倍高音Thumb1:</span>
+                <span class="config-value">${formatArray(config.sn_left_high_pro_Thumb)}</span>
+            </div>
+        `;
+    } else {
+        // 萨克斯配置
+        html = `
+            <div class="config-item">
+                <span class="config-label">左手按压力度:</span>
+                <span class="config-value">${formatArray(config.sks_left_press_profile)}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">左手释放力度:</span>
+                <span class="config-value">${formatArray(config.sks_left_release_profile)}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">右手按压力度:</span>
+                <span class="config-value">${formatArray(config.sks_right_press_profile)}</span>
+            </div>
+            <div class="config-item">
+                <span class="config-label">右手释放力度:</span>
+                <span class="config-value">${formatArray(config.sks_right_release_profile)}</span>
+            </div>
+        `;
+    }
+    
+    displayEl.innerHTML = html;
+}
+
+// 编辑配置
+function editConfig() {
+    if (!currentConfig) {
+        showNotification('错误', '配置未加载', 'error');
+        return;
+    }
+    
+    const displayEl = document.getElementById('configDisplay');
+    const editorEl = document.getElementById('configEditor');
+    const editBtn = document.getElementById('editConfigBtn');
+    const saveBtn = document.getElementById('saveConfigBtn');
+    const cancelBtn = document.getElementById('cancelConfigBtn');
+    
+    if (!displayEl || !editorEl) return;
+    
+    displayEl.style.display = 'none';
+    editorEl.style.display = 'block';
+    editBtn.style.display = 'none';
+    saveBtn.style.display = 'inline-block';
+    cancelBtn.style.display = 'inline-block';
+    
+    const formatArrayForInput = (arr) => {
+        if (!arr || !Array.isArray(arr)) return '';
+        return arr.join(', ');
+    };
+    
+    // 根据当前乐器类型显示对应编辑表单
+    let html = '';
+    
+    if (currentInstrument === 'sn') {
+        // 唢呐配置编辑表单
+        html = `
+            <div class="config-form-group">
+                <label>左手按压力度 (逗号分隔，顺序：拇指, 拇指旋转, 食指, 中指, 无名指, 小指):</label>
+                <input type="text" id="config_sn_left_press_profile" value="${formatArrayForInput(currentConfig.sn_left_press_profile)}" placeholder="例如: 151, 19, 232, 233, 235, 255" />
+            </div>
+            <div class="config-form-group">
+                <label>左手释放力度 (逗号分隔):</label>
+                <input type="text" id="config_sn_left_release_profile" value="${formatArrayForInput(currentConfig.sn_left_release_profile)}" placeholder="例如: 151, 19, 255, 255, 255, 255" />
+            </div>
+            <div class="config-form-group">
+                <label>右手按压力度 (逗号分隔):</label>
+                <input type="text" id="config_sn_right_press_profile" value="${formatArrayForInput(currentConfig.sn_right_press_profile)}" placeholder="例如: 0, 255, 233, 230, 238, 255" />
+            </div>
+            <div class="config-form-group">
+                <label>右手释放力度 (逗号分隔):</label>
+                <input type="text" id="config_sn_right_release_profile" value="${formatArrayForInput(currentConfig.sn_right_release_profile)}" placeholder="例如: 0, 255, 255, 255, 255, 255" />
+            </div>
+            <div class="config-divider"></div>
+            <div class="config-form-group">
+                <label>高音Thumb2 (逗号分隔，修改默认中音左手的前两位):</label>
+                <input type="text" id="config_sn_left_high_Thumb" value="${formatArrayForInput(currentConfig.sn_left_high_Thumb)}" placeholder="例如: 131, 19, 255, 255, 255, 255" />
+            </div>
+            <div class="config-form-group">
+                <label>倍高音Thumb1 (逗号分隔，修改默认中音的前两位):</label>
+                <input type="text" id="config_sn_left_high_pro_Thumb" value="${formatArrayForInput(currentConfig.sn_left_high_pro_Thumb)}" placeholder="例如: 110, 43" />
+            </div>
+        `;
+    } else {
+        // 萨克斯配置编辑表单
+        html = `
+            <div class="config-form-group">
+                <label>左手按压力度 (逗号分隔，顺序：拇指, 拇指旋转, 食指, 中指, 无名指, 小指):</label>
+                <input type="text" id="config_sks_left_press_profile" value="${formatArrayForInput(currentConfig.sks_left_press_profile)}" placeholder="例如: 141, 25, 255, 255, 255, 255" />
+            </div>
+            <div class="config-form-group">
+                <label>左手释放力度 (逗号分隔):</label>
+                <input type="text" id="config_sks_left_release_profile" value="${formatArrayForInput(currentConfig.sks_left_release_profile)}" placeholder="例如: 255, 255, 255, 255, 255, 255" />
+            </div>
+            <div class="config-form-group">
+                <label>右手按压力度 (逗号分隔):</label>
+                <input type="text" id="config_sks_right_press_profile" value="${formatArrayForInput(currentConfig.sks_right_press_profile)}" placeholder="例如: 171, 18, 222, 219, 215, 224" />
+            </div>
+            <div class="config-form-group">
+                <label>右手释放力度 (逗号分隔):</label>
+                <input type="text" id="config_sks_right_release_profile" value="${formatArrayForInput(currentConfig.sks_right_release_profile)}" placeholder="例如: 171, 18, 255, 255, 255, 255" />
+            </div>
+        `;
+    }
+    
+    editorEl.innerHTML = html;
+}
+
+// 保存配置
+async function saveConfig() {
+    const statusEl = document.getElementById('configStatus');
+    const saveBtn = document.getElementById('saveConfigBtn');
+    
+    if (!saveBtn || !statusEl) return;
+    
+    try {
+        saveBtn.disabled = true;
+        statusEl.textContent = '⏳ 正在保存配置...';
+        statusEl.className = 'config-status info';
+        
+        // 收集表单数据 - 只收集当前乐器类型的配置
+        const config = {};
+        
+        // 根据当前乐器类型收集对应的配置字段
+        if (currentInstrument === 'sn') {
+            // 唢呐配置字段
+            const snFields = [
+                'sn_left_press_profile', 'sn_left_release_profile',
+                'sn_right_press_profile', 'sn_right_release_profile',
+                'sn_left_high_Thumb', 'sn_left_high_pro_Thumb'
+            ];
+            
+            snFields.forEach(field => {
+                const input = document.getElementById(`config_${field}`);
+                if (input) {
+                    const value = input.value.trim();
+                    if (value) {
+                        config[field] = value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                    } else {
+                        config[field] = [];
+                    }
+                }
+            });
+        } else {
+            // 萨克斯配置字段
+            const sksFields = [
+                'sks_left_press_profile', 'sks_left_release_profile',
+                'sks_right_press_profile', 'sks_right_release_profile'
+            ];
+            
+            sksFields.forEach(field => {
+                const input = document.getElementById(`config_${field}`);
+                if (input) {
+                    const value = input.value.trim();
+                    if (value) {
+                        config[field] = value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+                    } else {
+                        config[field] = [];
+                    }
+                }
+            });
+        }
+        
+        const response = await fetch('/api/config/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ config })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            statusEl.textContent = `✅ ${data.message}`;
+            statusEl.className = 'config-status success';
+            showNotification('成功', '配置已保存', 'success');
+            
+            // 重新加载配置并退出编辑模式
+            await loadConfig();
+            cancelConfigEdit();
+        } else {
+            statusEl.textContent = `❌ ${data.error || '保存失败'}`;
+            statusEl.className = 'config-status error';
+            showNotification('错误', data.error || '保存配置失败', 'error');
+        }
+    } catch (error) {
+        console.error('保存配置失败:', error);
+        statusEl.textContent = `❌ 网络错误: ${error.message}`;
+        statusEl.className = 'config-status error';
+        showNotification('错误', '保存配置失败: 网络错误', 'error');
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+// 取消编辑
+function cancelConfigEdit() {
+    const displayEl = document.getElementById('configDisplay');
+    const editorEl = document.getElementById('configEditor');
+    const editBtn = document.getElementById('editConfigBtn');
+    const saveBtn = document.getElementById('saveConfigBtn');
+    const cancelBtn = document.getElementById('cancelConfigBtn');
+    
+    if (!displayEl || !editorEl) return;
+    
+    displayEl.style.display = 'block';
+    editorEl.style.display = 'none';
+    editBtn.style.display = 'inline-block';
+    saveBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    
+    // 重新渲染配置显示（确保显示的是当前乐器类型的配置）
+    if (currentConfig) {
+        renderConfigDisplay(currentConfig);
+    }
+}
+
 //sendto气泵
 async function sendPumponAndOff(command) {
     console.log('sendPumponAndOff 被调用，命令:', command);

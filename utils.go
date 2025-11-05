@@ -21,6 +21,9 @@ import (
 // 全局气泵控制器
 var globalPumpController *PumpController
 
+// 全局配置
+var globalConfig Config
+
 // 全局HTTP客户端（连接池复用，显著提升性能）
 var globalHTTPClient *http.Client
 var httpClientOnce sync.Once

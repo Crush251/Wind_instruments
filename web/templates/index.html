@@ -23,6 +23,7 @@
         <main>
             <!-- 左侧：音乐文件列表 -->
             <div class="left-panel">
+
                 <div class="search-section">
                     <h3>📁 音乐文件</h3>
                     <div class="search-box">
@@ -36,6 +37,27 @@
                         <!-- 文件列表将通过JavaScript动态加载 -->
                     </div>
                 </div>
+                                <!-- 配置管理区域 -->
+                                <div class="config-panel">
+                                    <div class="config-header">
+                                        <h3>⚙️ 系统配置</h3>
+                                        <button id="editConfigBtn" class="btn btn-sm btn-info">编辑</button>
+                                        <button id="reloadConfigBtn" class="btn btn-sm btn-info">重新加载配置</button>
+                                        <button id="saveConfigBtn" class="btn btn-sm btn-primary" style="display:none;">保存</button>
+                                        <button id="cancelConfigBtn" class="btn btn-sm btn-secondary" style="display:none;">取消</button>
+                                    </div>
+                                    
+                                    <div id="configDisplay" class="config-display">
+                                        <!-- 配置信息将在这里显示 -->
+                                    </div>
+                                    
+                                    <div id="configEditor" class="config-editor" style="display:none;">
+                                        <!-- 配置编辑表单将在这里显示 -->
+                                    </div>
+                                    
+                                    <div id="configStatus" class="config-status"></div>
+                                </div>
+                                
             </div>
             
             <!-- 右侧：控制面板 -->

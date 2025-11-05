@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -77,6 +78,11 @@ func (ws *WebServer) StartWebServer() {
 
 	// 气泵调试API
 	r.POST("/api/pump/debug", ws.debugPumpCommand)
+
+	// 配置管理API
+	r.GET("/api/config", ws.getConfig)
+	r.POST("/api/config/reload", ws.reloadConfig)
+	r.POST("/api/config/save", ws.saveConfig)
 
 	// 静态文件服务（使用嵌入的文件系统）
 	staticFS, _ := fs.Sub(staticFiles, "web/static")
@@ -513,6 +519,11 @@ func (ws *WebServer) playExecSequence(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建执行引擎失败: %v", err)})
 		return
 	}
+	//检测气泵是否连接
+	if globalPumpController == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "气泵控制器未初始化"})
+		return
+	}
 
 	// 异步开始播放
 	if err := engine.PlayAsync(); err != nil {
@@ -593,5 +604,189 @@ func (ws *WebServer) debugPumpCommand(c *gin.Context) {
 		"message":  "命令发送成功",
 		"command":  request.Command,
 		"response": response,
+	})
+}
+
+// getConfig 获取当前配置信息
+func (ws *WebServer) getConfig(c *gin.Context) {
+	cfg := ws.fileReader.LoadConfig("config.yaml")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "配置加载成功",
+		"config": gin.H{
+			"left_interface":            cfg.Hands.Left.Interface,
+			"right_interface":           cfg.Hands.Right.Interface,
+			"sn_left_press_profile":     cfg.SnLeftPressProfile,
+			"sn_left_release_profile":   cfg.SnLeftReleaseProfile,
+			"sn_right_press_profile":    cfg.SnRightPressProfile,
+			"sn_right_release_profile":  cfg.SnRightReleaseProfile,
+			"sn_left_high_Thumb":        cfg.SnLeftHighThumb,
+			"sn_left_high_pro_Thumb":    cfg.SnLeftHighProThumb,
+			"sks_left_press_profile":    cfg.SksLeftPressProfile,
+			"sks_left_release_profile":  cfg.SksLeftReleaseProfile,
+			"sks_right_press_profile":   cfg.SksRightPressProfile,
+			"sks_right_release_profile": cfg.SksRightReleaseProfile,
+		},
+	})
+}
+
+// reloadConfig 重新加载配置（验证配置文件是否存在且可读）
+func (ws *WebServer) reloadConfig(c *gin.Context) {
+	// 重新加载配置（验证文件是否存在且可读）
+	globalConfig = ws.fileReader.LoadConfig("config.yaml")
+	cfg := globalConfig
+	// 验证关键配置项
+	if cfg.CanBridgeURL == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "配置已重新加载",
+			"warning": "CAN桥接服务地址为空",
+			"config": gin.H{
+				"sn_left_press_profile":     cfg.SnLeftPressProfile,
+				"sn_left_release_profile":   cfg.SnLeftReleaseProfile,
+				"sn_right_press_profile":    cfg.SnRightPressProfile,
+				"sn_right_release_profile":  cfg.SnRightReleaseProfile,
+				"sn_left_high_Thumb":        cfg.SnLeftHighThumb,
+				"sn_left_high_pro_Thumb":    cfg.SnLeftHighProThumb,
+				"sks_left_press_profile":    cfg.SksLeftPressProfile,
+				"sks_left_release_profile":  cfg.SksLeftReleaseProfile,
+				"sks_right_press_profile":   cfg.SksRightPressProfile,
+				"sks_right_release_profile": cfg.SksRightReleaseProfile,
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "配置已重新加载",
+		"config": gin.H{
+			"sn_left_press_profile":     cfg.SnLeftPressProfile,
+			"sn_left_release_profile":   cfg.SnLeftReleaseProfile,
+			"sn_right_press_profile":    cfg.SnRightPressProfile,
+			"sn_right_release_profile":  cfg.SnRightReleaseProfile,
+			"sn_left_high_Thumb":        cfg.SnLeftHighThumb,
+			"sn_left_high_pro_Thumb":    cfg.SnLeftHighProThumb,
+			"sks_left_press_profile":    cfg.SksLeftPressProfile,
+			"sks_left_release_profile":  cfg.SksLeftReleaseProfile,
+			"sks_right_press_profile":   cfg.SksRightPressProfile,
+			"sks_right_release_profile": cfg.SksRightReleaseProfile,
+		},
+	})
+}
+
+// saveConfig 保存配置到文件
+func (ws *WebServer) saveConfig(c *gin.Context) {
+	var request struct {
+		Config map[string]interface{} `json:"config"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
+		return
+	}
+
+	// 处理数组类型的配置（力度配置）
+	parseIntArray := func(val interface{}) []int {
+		if arr, ok := val.([]interface{}); ok {
+			result := make([]int, len(arr))
+			for i, v := range arr {
+				if num, ok := v.(float64); ok {
+					result[i] = int(num)
+				}
+			}
+			return result
+		}
+		return nil
+	}
+
+	// 读取原始文件内容（保持格式和注释）
+	fileContent, err := os.ReadFile("config.yaml")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取配置文件失败: %v", err)})
+		return
+	}
+
+	content := string(fileContent)
+
+	// 格式化数组为字符串（例如：[141, 25, 255, 255, 255, 255]）
+	formatArray := func(arr []int) string {
+		if len(arr) == 0 {
+			return "[]"
+		}
+		parts := make([]string, len(arr))
+		for i, v := range arr {
+			parts[i] = fmt.Sprintf("%d", v)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	}
+
+	// 使用正则表达式替换各个字段的值，保持原有格式和注释
+	// 匹配模式：字段名: [值] # 注释（可选）
+	updateField := func(fieldName string, newValue string) {
+		// 匹配：fieldName: [old_value] 或 fieldName: [old_value] # comment
+		pattern := regexp.MustCompile(fmt.Sprintf(`(?m)^(\s*)%s:\s*\[.*?\](\s*#.*)?$`, regexp.QuoteMeta(fieldName)))
+		replacement := fmt.Sprintf("${1}%s: %s${2}", fieldName, newValue)
+		content = pattern.ReplaceAllString(content, replacement)
+	}
+
+	// 更新力度相关的配置字段
+	if val, ok := request.Config["sn_left_press_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sn_left_press_profile", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sn_left_release_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sn_left_release_profile", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sn_right_press_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sn_right_press_profile", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sn_right_release_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sn_right_release_profile", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sn_left_high_Thumb"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sn_left_high_Thumb", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sn_left_high_pro_Thumb"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sn_left_high_pro_Thumb", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sks_left_press_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sks_left_press_profile", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sks_left_release_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sks_left_release_profile", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sks_right_press_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sks_right_press_profile", formatArray(arr))
+		}
+	}
+	if val, ok := request.Config["sks_right_release_profile"]; ok && val != nil {
+		if arr := parseIntArray(val); arr != nil {
+			updateField("sks_right_release_profile", formatArray(arr))
+		}
+	}
+
+	// 保存到文件（保持原始格式和注释）
+	if err := os.WriteFile("config.yaml", []byte(content), 0644); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("保存配置文件失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "配置已保存",
 	})
 }
