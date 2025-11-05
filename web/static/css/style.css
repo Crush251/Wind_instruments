@@ -239,6 +239,92 @@ main {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+/* 气泵调试样式 */
+.pump-debug-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #fff8dc;
+    border-radius: 8px;
+    border: 1px solid #ffa500;
+}
+
+.pump-debug-section label {
+    display: block;
+    font-size: 0.95rem;
+    color: #4a5568;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.pump-debug-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.pump-debug-controls input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 2px solid #ffa500;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.pump-debug-controls input:focus {
+    outline: none;
+    border-color: #ff8c00;
+    box-shadow: 0 0 0 3px rgba(255, 165, 0, 0.2);
+}
+
+.pump-debug-status {
+    margin-top: 8px;
+    font-size: 0.85rem;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.pump-debug-status.success {
+    color: #22543d;
+    background-color: #c6f6d5;
+    border: 1px solid #68d391;
+}
+
+.pump-debug-status.error {
+    color: #742a2a;
+    background-color: #fed7d7;
+    border: 1px solid #fc8181;
+}
+
+.pump-debug-status.warning {
+    color: #744210;
+    background-color: #feebc8;
+    border: 1px solid #f6ad55;
+}
+
+.pump-debug-status.info {
+    color: #2c5282;
+    background-color: #bee3f8;
+    border: 1px solid #63b3ed;
+}
+
+.btn-warning {
+    background-color: #ffa500;
+    color: white;
+}
+
+.btn-warning:hover {
+    background-color: #ff8c00;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 165, 0, 0.3);
+}
+
+.btn-warning:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(255, 165, 0, 0.3);
+}
+
 .control-buttons {
     display: flex;
     gap: 15px;
@@ -881,5 +967,85 @@ main {
     display: flex;
     gap: 10px;
     justify-content: flex-end;
+}
+
+/* 显著空拍详情区域 */
+.rest-details-section {
+    margin-bottom: 25px;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.rest-details-section h3 {
+    color: #4a5568;
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+}
+
+.rest-details-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rest-item {
+    display: grid;
+    grid-template-columns: 80px 1fr 1fr 1fr;
+    gap: 15px;
+    padding: 12px 15px;
+    background: #f7fafc;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+    transition: all 0.2s ease;
+}
+
+.rest-item:hover {
+    background: #edf2f7;
+    transform: translateX(5px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.rest-item .rest-label {
+    font-weight: 700;
+    color: #667eea;
+    font-size: 0.9rem;
+}
+
+.rest-item .rest-time {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.rest-item .rest-time .label {
+    font-size: 0.75rem;
+    color: #718096;
+    font-weight: 500;
+}
+
+.rest-item .rest-time .value {
+    font-size: 0.95rem;
+    color: #2d3748;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+
+.rest-item .rest-duration {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;
+    color: #e53e3e;
+    font-weight: 700;
+}
+
+.rest-item .rest-beats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: #718096;
 }
 

@@ -23,10 +23,9 @@ type Config struct {
 	} `yaml:"hands"`
 	QibengInterface string `yaml:"qibenginterface"`
 
-	// 气泵控制配置
+	// 气泵控制配置（仅串口）
 	Pump struct {
-		UseSerial bool   `yaml:"use_serial"` // 是否使用串口通信
-		PortName  string `yaml:"port_name"`  // 串口名称（如：/dev/ttyUSB0）
+		PortName string `yaml:"port_name"` // 串口名称（如：/dev/ttyUSB0）
 	} `yaml:"pump"`
 
 	// 萨克斯手指力度配置：[拇指, 拇指旋转, 食指, 中指, 无名指, 小指]
@@ -92,29 +91,38 @@ type MusicFileInfo struct {
 
 // 演奏状态
 type PlaybackStatus struct {
-	IsPlaying     bool    `json:"is_playing"`     // 是否正在演奏
-	IsPaused      bool    `json:"is_paused"`      // 是否暂停
-	CurrentFile   string  `json:"current_file"`   // 当前文件
-	CurrentNote   int     `json:"current_note"`   // 当前音符索引
-	TotalNotes    int     `json:"total_notes"`    // 总音符数
-	ElapsedTime   string  `json:"elapsed_time"`   // 已播放时间
-	RemainingTime string  `json:"remaining_time"` // 剩余时间
-	Progress      float64 `json:"progress"`       // 播放进度（0-100）
+	IsPlaying           bool                 `json:"is_playing"`           // 是否正在演奏
+	CurrentFile         string               `json:"current_file"`         // 当前文件
+	CurrentNote         int                  `json:"current_note"`         // 当前音符索引
+	TotalNotes          int                  `json:"total_notes"`          // 总音符数
+	ElapsedTime         string               `json:"elapsed_time"`         // 已播放时间
+	RemainingTime       string               `json:"remaining_time"`       // 剩余时间
+	Progress            float64              `json:"progress"`             // 播放进度（0-100）
+	TheoreticalDuration float64              `json:"theoretical_duration"` // 理论时长（秒）
+	ActualDuration      float64              `json:"actual_duration"`      // 实际时长（秒）
+	SignificantRests    []RestTimingResponse `json:"significant_rests"`    // 显著空拍列表
+}
+
+// RestTimingResponse 空拍时间响应（用于前端显示）
+type RestTimingResponse struct {
+	StartOffset float64 `json:"start_offset"` // 起始偏移（秒）
+	EndOffset   float64 `json:"end_offset"`   // 结束偏移（秒）
+	Duration    float64 `json:"duration"`     // 持续时长（秒）
+	Beats       float64 `json:"beats"`        // 拍数
 }
 
 // 演奏控制器
 type PlaybackController struct {
-	mutex        sync.RWMutex
-	status       PlaybackStatus
-	stopChan     chan bool
-	pauseChan    chan bool
-	resumeChan   chan bool
-	isRunning    bool
-	config       Config
-	timeline     TimelineFile
-	fingeringMap map[string]FingeringEntry
-	startTime    time.Time
-	instrument   string // "sks" 或 "sn"，表示当前乐器类型
+	mutex     sync.RWMutex
+	status    PlaybackStatus
+	stopChan  chan bool
+	doneChan  chan bool // 播放完成信号
+	isRunning bool
+	config    Config
+	//timeline     TimelineFile
+	//fingeringMap map[string]FingeringEntry
+	startTime  time.Time
+	instrument string // "sks" 或 "sn"，表示当前乐器类型
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -126,17 +134,6 @@ type NoteEvent struct {
 	Note     string
 	Duration float64
 	Index    int
-}
-
-// 演奏引擎
-type PerformanceEngine struct {
-	cfg            Config
-	fingeringMap   map[string]FingeringEntry
-	instrument     string
-	secondsPerBeat float64
-	lastThumbState string       // 追踪上一个音符的拇指状态：""、"Thumb1"、"Thumb2"
-	timeline       TimelineFile // 时间轴数据
-	tonguingDelay  int          // 吐音延迟时间（毫秒）
 }
 
 ////////////////////////////////////////////////////////////////////////////////

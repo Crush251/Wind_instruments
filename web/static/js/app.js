@@ -1,42 +1,43 @@
 // 全局变量
 let selectedFile = null;
 let isPlaying = false;
-let isPaused = false;
 let autoScroll = true;
 let statusUpdateInterval = null;
 let logUpdateInterval = null;
-let currentInstrument = 'sks'; // 当前选择的乐器：sks(萨克斯) 或 sn(唢呐)
+let currentInstrument = 'sn'; // 当前选择的乐器：sks(萨克斯) 或 sn(唢呐)
 let currentTimeline = null; // 当前加载的时间轴数据
 let editingRestIndex = -1; // 正在编辑的空拍索引
 
-// DOM元素
-const searchInput = document.getElementById('searchInput');
-const searchBtn = document.getElementById('searchBtn');
-const fileList = document.getElementById('fileList');
-const startBtn = document.getElementById('startBtn');
-const pauseBtn = document.getElementById('pauseBtn');
-const stopBtn = document.getElementById('stopBtn');
-const clearLogBtn = document.getElementById('clearLogBtn');
-const autoScrollBtn = document.getElementById('autoScrollBtn');
-const logContent = document.getElementById('logContent');
-const loadFingeringsBtn = document.getElementById('loadFingeringsBtn');
-const fingeringButtonsEl = document.getElementById('fingeringButtons');
-
-// 乐器切换元素
-const sksBtn = document.getElementById('sksBtn');
-const snBtn = document.getElementById('snBtn');
-
-// 状态显示元素
-const currentFileEl = document.getElementById('currentFile');
-const progressEl = document.getElementById('progress');
-const currentNoteEl = document.getElementById('currentNote');
-const totalNotesEl = document.getElementById('totalNotes');
-const elapsedTimeEl = document.getElementById('elapsedTime');
-const playStatusEl = document.getElementById('playStatus');
-const progressBarEl = document.getElementById('progressBar');
+// DOM元素（在DOMContentLoaded后初始化）
+let searchInput, searchBtn, fileList, startBtn, stopBtn;
+let clearLogBtn, autoScrollBtn, logContent, loadFingeringsBtn, fingeringButtonsEl;
+let sksBtn, snBtn;
+let currentFileEl, progressEl, currentNoteEl, totalNotesEl;
+let elapsedTimeEl, playStatusEl, progressBarEl;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
+    // 初始化DOM元素引用
+    searchInput = document.getElementById('searchInput');
+    searchBtn = document.getElementById('searchBtn');
+    fileList = document.getElementById('fileList');
+    startBtn = document.getElementById('startBtn');
+    stopBtn = document.getElementById('stopBtn');
+    clearLogBtn = document.getElementById('clearLogBtn');
+    autoScrollBtn = document.getElementById('autoScrollBtn');
+    logContent = document.getElementById('logContent');
+    loadFingeringsBtn = document.getElementById('loadFingeringsBtn');
+    fingeringButtonsEl = document.getElementById('fingeringButtons');
+    sksBtn = document.getElementById('sksBtn');
+    snBtn = document.getElementById('snBtn');
+    currentFileEl = document.getElementById('currentFile');
+    progressEl = document.getElementById('progress');
+    currentNoteEl = document.getElementById('currentNote');
+    totalNotesEl = document.getElementById('totalNotes');
+    elapsedTimeEl = document.getElementById('elapsedTime');
+    playStatusEl = document.getElementById('playStatus');
+    progressBarEl = document.getElementById('progressBar');
+    
     loadMusicFiles();
     setupEventListeners();
     startStatusUpdates();
@@ -48,6 +49,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 初始化BPM输入监听
     initBpmListener();
+    
+    // 初始化预处理按钮
+    initPreprocessButton();
 });
 
 // 设置事件监听器
@@ -65,7 +69,6 @@ function setupEventListeners() {
     
     // 控制按钮
     startBtn.addEventListener('click', startPlayback);
-    pauseBtn.addEventListener('click', pausePlayback);
     stopBtn.addEventListener('click', stopPlayback);
     
     // 日志控制
@@ -82,6 +85,28 @@ function setupEventListeners() {
     snBtn.addEventListener('click', function() {
         switchInstrument('sn');
     });
+    
+    // 气泵调试按钮
+    const pumpDebugBtn = document.getElementById('pumpDebugBtn');
+    const pumpOnBtn = document.getElementById('pumpOnBtn');
+    const pumpOffBtn = document.getElementById('pumpOffBtn');
+    const pumpDebugInput = document.getElementById('pumpDebugInput');
+    if (pumpDebugBtn && pumpDebugInput) {
+        pumpDebugBtn.addEventListener('click', sendPumpDebugCommand);
+        pumpDebugInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendPumpDebugCommand();
+            }
+        });
+    }
+    if (pumpOnBtn && pumpOffBtn) {
+        pumpOnBtn.addEventListener('click', function() {
+            sendPumponAndOff('on');
+        });
+        pumpOffBtn.addEventListener('click', function() {
+            sendPumponAndOff('off');
+        });
+    }
 }
 
 // 加载音乐文件列表
@@ -150,6 +175,9 @@ function selectFile(file) {
     
     // 加载歌曲时间轴
     loadSongTimeline(file.filename);
+    
+    // 检查执行序列缓存
+    checkExecCache();
 }
 
 // 更新开始按钮状态
@@ -157,12 +185,20 @@ function updateStartButtonState() {
     startBtn.disabled = !selectedFile || isPlaying;
 }
 
-// 开始演奏
+// 开始演奏（强制使用预计算模式）
 async function startPlayback() {
     if (!selectedFile || isPlaying) return;
     
     try {
         startBtn.disabled = true;
+        
+        // 重置计时器显示（开始新播放时）
+        stopTimer();
+        updateTimerDisplay(0);
+        document.getElementById('timeDiff').textContent = '-';
+        
+        // 隐藏之前的空拍详情
+        hideSignificantRests();
         
         // 获取用户输入的参数
         const bpmInput = document.getElementById('bpmInput');
@@ -171,31 +207,28 @@ async function startPlayback() {
         const bpm = bpmInput.value ? parseFloat(bpmInput.value) : 0;
         const tonguingDelay = parseInt(tonguingDelayInput.value) || 30;
         
-        const response = await fetch('/api/playback/start', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                filename: selectedFile.filename,
-                instrument: currentInstrument,
-                bpm: bpm,
-                tonguing_delay: tonguingDelay
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.error) {
-            showNotification('错误', data.error, 'error');
-            startBtn.disabled = false;
-            return;
+        // 检查是否已有预计算文件
+        if (!currentExecFile) {
+            // 没有预计算文件，自动进行预处理
+            showNotification('提示', '正在自动预处理...', 'info');
+            updatePreprocessStatus('🔄 自动预处理中...', 'loading');
+            
+            const preprocessSuccess = await preprocessAndWait(bpm, tonguingDelay);
+            if (!preprocessSuccess) {
+                startBtn.disabled = false;
+                return;
+            }
         }
         
-        isPlaying = true;
-        isPaused = false;
-        updateButtonStates();
-        showNotification('成功', '演奏已开始', 'success');
+        // 使用预计算执行序列播放
+        const success = await playExecSequence();
+        if (success) {
+            isPlaying = true;
+            updateButtonStates();
+            startTimer();
+        } else {
+            startBtn.disabled = false;
+        }
         
     } catch (error) {
         console.error('开始演奏失败:', error);
@@ -204,32 +237,38 @@ async function startPlayback() {
     }
 }
 
-// 暂停/恢复演奏
-async function pausePlayback() {
-    if (!isPlaying) return;
-    
+// 预处理并等待完成
+async function preprocessAndWait(bpm, tonguingDelay) {
     try {
-        const response = await fetch('/api/playback/pause', {
+        const response = await fetch('/api/preprocess', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                source_file: selectedFile.file_path || selectedFile.filename,
+                instrument: currentInstrument,
+                bpm: bpm,
+                tonguing_delay: tonguingDelay
+            })
         });
         
         const data = await response.json();
         
-        if (data.error) {
-            showNotification('错误', data.error, 'error');
-            return;
+        if (response.ok) {
+            currentExecFile = data.exec_file;
+            theoreticalDuration = data.duration_sec;
+            updatePreprocessStatus(`✅ 自动预处理完成！时长: ${data.duration_sec.toFixed(2)}秒`, 'success');
+            updateSongDuration(data.duration_sec);
+            return true;
+        } else {
+            updatePreprocessStatus(`❌ 预处理失败: ${data.error}`, 'error');
+            showNotification('错误', `预处理失败: ${data.error}`, 'error');
+            return false;
         }
-        
-        isPaused = !isPaused;
-        updateButtonStates();
-        showNotification('成功', data.message, 'success');
-        
     } catch (error) {
-        console.error('暂停演奏失败:', error);
-        showNotification('错误', '暂停演奏失败，请检查网络连接', 'error');
+        console.error('预处理失败:', error);
+        updatePreprocessStatus('❌ 预处理失败: 网络错误', 'error');
+        showNotification('错误', '预处理失败: 网络错误', 'error');
+        return false;
     }
 }
 
@@ -253,10 +292,10 @@ async function stopPlayback() {
         }
         
         isPlaying = false;
-        isPaused = false;
         // 不清除selectedFile，这样可以直接重新开始
         updateButtonStates();
-        resetStatus();
+        // 不调用 resetStatus()，保留最终计时结果显示
+        stopTimer(); // 停止计时器
         showNotification('成功', '演奏已停止', 'success');
         
     } catch (error) {
@@ -268,16 +307,7 @@ async function stopPlayback() {
 // 更新按钮状态
 function updateButtonStates() {
     startBtn.disabled = isPlaying;
-    pauseBtn.disabled = !isPlaying;
     stopBtn.disabled = !isPlaying;
-    
-    if (isPlaying) {
-        if (isPaused) {
-            pauseBtn.textContent = '▶️ 恢复演奏';
-        } else {
-            pauseBtn.textContent = '⏸️ 暂停演奏';
-        }
-    }
 }
 
 // 重置状态显示
@@ -309,19 +339,28 @@ async function updateStatus() {
 		elapsedTimeEl.textContent = status.elapsed_time || '-';
 		
 		if (status.is_playing) {
-			playStatusEl.textContent = status.is_paused ? '已暂停' : '播放中';
+			playStatusEl.textContent = '播放中';
 		} else {
 			playStatusEl.textContent = '未开始';
 		}
 		
 		progressBarEl.style.width = `${status.progress || 0}%`;
 		
-		// 检查演奏是否已结束，如果是则重置前端状态
+		// 检查演奏是否已结束，如果是则重置前端状态并显示空拍信息
 		if (!status.is_playing && isPlaying) {
 			isPlaying = false;
-			isPaused = false;
 			updateButtonStates();
 			updateStartButtonState();
+			pauseTimerAtEnd(); // 暂停计时器但保留最终显示
+			
+			// 显示播放结束后的统计信息（包括空拍）
+			console.log('播放结束，检查空拍数据:', status.significant_rests);
+			if (status.significant_rests && status.significant_rests.length > 0) {
+				console.log('显示', status.significant_rests.length, '个显著空拍');
+				displaySignificantRests(status.significant_rests);
+			} else {
+				console.log('没有显著空拍数据');
+			}
 		}
 		
 	} catch (error) {
@@ -669,6 +708,12 @@ async function loadSongTimeline(filename) {
         
         currentTimeline = data;
         
+        // 自动填充BPM输入框
+        const bpmInput = document.getElementById('bpmInput');
+        if (bpmInput && data.bpm) {
+            bpmInput.value = data.bpm;
+        }
+        
         // 更新歌曲信息显示
         updateSongInfo();
         
@@ -879,3 +924,371 @@ function initModalListeners() {
 
 // 将函数暴露到全局作用域
 window.openRestEditModal = openRestEditModal;
+
+////////////////////////////////////////////////////////////////////////////////
+// 预处理和执行序列相关功能
+////////////////////////////////////////////////////////////////////////////////
+
+let currentExecFile = null;
+let theoreticalDuration = 0;
+let timerInterval = null;
+let timerStartTime = null;
+let pausedTime = 0;
+
+// 初始化预处理按钮
+function initPreprocessButton() {
+    const preprocessBtn = document.getElementById('preprocessBtn');
+    const useCacheCheckbox = document.getElementById('useCacheCheckbox');
+    
+    if (preprocessBtn) {
+        preprocessBtn.addEventListener('click', handlePreprocess);
+    }
+    
+    // 文件选择或参数变化时检查缓存
+    document.getElementById('bpmInput')?.addEventListener('change', checkExecCache);
+    document.getElementById('tonguingDelayInput')?.addEventListener('change', checkExecCache);
+}
+
+// 检查执行序列缓存
+async function checkExecCache() {
+    if (!selectedFile) return;
+    
+    const bpm = document.getElementById('bpmInput').value || '0';
+    const tonguingDelay = document.getElementById('tonguingDelayInput').value || '30';
+    const instrument = currentInstrument;
+    
+    try {
+        const sourceFile = selectedFile.file_path || selectedFile.filename;
+        const response = await fetch(`/api/exec/check?source_file=${encodeURIComponent(sourceFile)}&instrument=${instrument}&bpm=${bpm}&tonguing_delay=${tonguingDelay}`);
+        const data = await response.json();
+        
+        if (data.exists) {
+            currentExecFile = data.exec_file;
+            theoreticalDuration = data.duration_sec;
+            updatePreprocessStatus(`✅ 找到缓存文件（时长: ${data.duration_sec.toFixed(2)}秒）`, 'success');
+            updateSongDuration(data.duration_sec);
+        } else {
+            currentExecFile = null;
+            updatePreprocessStatus('ℹ️ 未找到缓存，点击开始将自动生成', 'info');
+        }
+    } catch (error) {
+        console.error('检查缓存失败:', error);
+        updatePreprocessStatus('❌ 检查缓存失败', 'error');
+    }
+}
+
+// 处理预处理请求
+async function handlePreprocess() {
+    if (!selectedFile) {
+        updatePreprocessStatus('❌ 请先选择音乐文件', 'error');
+        return;
+    }
+    
+    const bpm = parseFloat(document.getElementById('bpmInput').value) || 0;
+    const tonguingDelay = parseInt(document.getElementById('tonguingDelayInput').value) || 30;
+    const instrument = currentInstrument;
+    
+    updatePreprocessStatus('🔄 正在预处理...', 'loading');
+    
+    const preprocessBtn = document.getElementById('preprocessBtn');
+    if (preprocessBtn) preprocessBtn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/preprocess', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                source_file: selectedFile.file_path || selectedFile.filename,
+                instrument: instrument,
+                bpm: bpm,
+                tonguing_delay: tonguingDelay
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            currentExecFile = data.exec_file;
+            theoreticalDuration = data.duration_sec;
+            updatePreprocessStatus(`✅ 预处理完成！时长: ${data.duration_sec.toFixed(2)}秒，事件数: ${data.total_events}`, 'success');
+            updateSongDuration(data.duration_sec);
+        } else {
+            updatePreprocessStatus(`❌ 预处理失败: ${data.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('预处理失败:', error);
+        updatePreprocessStatus('❌ 预处理失败: 网络错误', 'error');
+    } finally {
+        if (preprocessBtn) preprocessBtn.disabled = false;
+    }
+}
+
+// 更新预处理状态显示
+function updatePreprocessStatus(message, type) {
+    const statusElement = document.getElementById('preprocessStatus');
+    if (!statusElement) return;
+    
+    statusElement.textContent = message;
+    statusElement.className = `preprocess-status ${type}`;
+}
+
+// 更新歌曲时长显示
+function updateSongDuration(durationSec) {
+    const durationElement = document.getElementById('songDuration');
+    if (durationElement) {
+        const minutes = Math.floor(durationSec / 60);
+        const seconds = (durationSec % 60).toFixed(2);
+        durationElement.textContent = `${minutes}:${seconds.padStart(5, '0')}`;
+    }
+}
+
+// 启动计时器
+function startTimer() {
+    timerStartTime = Date.now() - pausedTime;
+    pausedTime = 0;
+    
+    timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - timerStartTime) / 1000;
+        updateTimerDisplay(elapsed);
+        
+        // 计算时间误差
+        if (theoreticalDuration > 0) {
+            const diff = elapsed - theoreticalDuration;
+            const diffPercent = (diff / theoreticalDuration * 100).toFixed(2);
+            document.getElementById('timeDiff').textContent = `${diff >= 0 ? '+' : ''}${diff.toFixed(3)}s (${diffPercent}%)`;
+        }
+    }, 10); // 每10ms更新一次，显示毫秒
+}
+
+// 暂停计时器
+function pauseTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        pausedTime = Date.now() - timerStartTime;
+    }
+}
+
+// 停止计时器（用于手动停止或开始新播放）
+function stopTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    timerStartTime = null;
+    pausedTime = 0;
+    updateTimerDisplay(0);
+    document.getElementById('timeDiff').textContent = '-';
+}
+
+// 暂停计时器但保留显示（用于播放自然结束）
+function pauseTimerAtEnd() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    // 保留 timerStartTime 和 pausedTime，不清零显示
+    // 这样最终的时间和误差会保留在界面上
+}
+
+// 更新计时器显示
+function updateTimerDisplay(seconds) {
+    const timerElement = document.getElementById('actualTimer');
+    if (!timerElement) return;
+    
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    
+    timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+}
+
+// 播放执行序列
+async function playExecSequence() {
+    if (!currentExecFile) {
+        showNotification('错误', '请先预处理或选择缓存文件', 'error');
+        return false;
+    }
+    
+    try {
+        const response = await fetch('/api/exec/play', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                exec_file: currentExecFile
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showNotification('成功', '开始播放执行序列', 'success');
+            return true;
+        } else {
+            showNotification('错误', `播放失败: ${data.error}`, 'error');
+            return false;
+        }
+    } catch (error) {
+        console.error('播放失败:', error);
+        showNotification('错误', '播放失败: 网络错误', 'error');
+        return false;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// 显著空拍显示功能
+////////////////////////////////////////////////////////////////////////////////
+
+// 显示显著空拍详情
+function displaySignificantRests(rests) {
+    console.log('displaySignificantRests 被调用，数据:', rests);
+    
+    const restDetailsSection = document.getElementById('restDetailsSection');
+    const restDetailsContent = document.getElementById('restDetailsContent');
+    const significantRestCount = document.getElementById('significantRestCount');
+    
+    console.log('DOM元素:', { restDetailsSection, restDetailsContent, significantRestCount });
+    
+    if (!restDetailsSection || !restDetailsContent) {
+        console.error('DOM元素未找到！');
+        return;
+    }
+    
+    // 更新显著空拍数量
+    if (significantRestCount) {
+        significantRestCount.textContent = rests.length;
+    }
+    
+    if (rests.length === 0) {
+        restDetailsSection.style.display = 'none';
+        return;
+    }
+    
+    // 显示区域
+    restDetailsSection.style.display = 'block';
+    console.log('显示区域已展开');
+    
+    // 清空现有内容
+    restDetailsContent.innerHTML = '';
+    
+    // 生成每个空拍的详情
+    rests.forEach((rest, index) => {
+        console.log(`生成空拍${index + 1}:`, rest);
+        console.log(`  start_offset: ${rest.start_offset}, 格式化: ${formatTime(rest.start_offset)}`);
+        console.log(`  end_offset: ${rest.end_offset}, 格式化: ${formatTime(rest.end_offset)}`);
+        
+        const restItem = document.createElement('div');
+        restItem.className = 'rest-item';
+        
+        restItem.innerHTML = `
+            <div class="rest-label">空拍${index + 1}</div>
+            <div class="rest-time">
+                <span class="label">起始时间</span>
+                <span class="value">${formatTime(rest.start_offset)}</span>
+            </div>
+            <div class="rest-time">
+                <span class="label">结束时间</span>
+                <span class="value">${formatTime(rest.end_offset)}</span>
+            </div>
+            <div class="rest-duration">
+                持续: ${rest.duration.toFixed(2)}s (${rest.beats.toFixed(1)}拍)
+            </div>
+        `;
+        
+        restDetailsContent.appendChild(restItem);
+        console.log(`空拍${index + 1} DOM已添加`);
+    });
+    
+    console.log('所有空拍详情已生成');
+}
+
+// 格式化时间显示（秒转为 分:秒.毫秒 格式）
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    return `${minutes}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+}
+
+// 在开始新播放时隐藏空拍详情
+function hideSignificantRests() {
+    const restDetailsSection = document.getElementById('restDetailsSection');
+    if (restDetailsSection) {
+        restDetailsSection.style.display = 'none';
+    }
+    const significantRestCount = document.getElementById('significantRestCount');
+    if (significantRestCount) {
+        significantRestCount.textContent = '-';
+    }
+}
+//sendto气泵
+async function sendPumponAndOff(command) {
+    console.log('sendPumponAndOff 被调用，命令:', command);
+    const statusEl = document.getElementById('pumpDebugStatus');
+    const response = await fetch('/api/pump/debug', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ command: command })
+    });
+    const data = await response.json();
+    if (response.ok) {
+        statusEl.textContent = `✅ ${data.message}`;
+        statusEl.className = 'pump-debug-status success';
+    } else {
+        statusEl.textContent = `❌ ${data.error}${data.details ? ': ' + data.details : ''}`;
+        statusEl.className = 'pump-debug-status error';
+    }
+    setTimeout(() => {
+        statusEl.textContent = '';
+        statusEl.className = 'pump-debug-status';
+    }, 3000);
+}
+
+// 发送气泵调试命令
+async function sendPumpDebugCommand() {
+    const input = document.getElementById('pumpDebugInput');
+    const statusEl = document.getElementById('pumpDebugStatus');
+    const command = input.value.trim();
+    
+    if (!command) {
+        statusEl.textContent = '⚠️ 请输入命令';
+        statusEl.className = 'pump-debug-status warning';
+        return;
+    }
+    
+    try {
+        statusEl.textContent = '⏳ 发送中...';
+        statusEl.className = 'pump-debug-status info';
+        
+        const response = await fetch('/api/pump/debug', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ command: command })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            statusEl.textContent = `✅ ${data.message}`;
+            statusEl.className = 'pump-debug-status success';
+            input.value = ''; // 清空输入框
+        } else {
+            statusEl.textContent = `❌ ${data.error}${data.details ? ': ' + data.details : ''}`;
+            statusEl.className = 'pump-debug-status error';
+        }
+    } catch (error) {
+        console.error('发送气泵命令失败:', error);
+        statusEl.textContent = `❌ 发送失败: ${error.message}`;
+        statusEl.className = 'pump-debug-status error';
+    }
+    
+    // 3秒后清除状态
+    setTimeout(() => {
+        statusEl.textContent = '';
+        statusEl.className = 'pump-debug-status';
+    }, 3000);
+}

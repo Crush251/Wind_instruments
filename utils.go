@@ -117,6 +117,18 @@ func (u *Utils) ClosePumpController() {
 
 // GlobalPumpSend 发送气泵命令（异步版本，不等待响应，提高演奏速度）
 func GlobalPumpSend(cmd string) string {
+
+	if !strings.HasSuffix(cmd, "\n") {
+		cmd += "\n"
+	}
+	globalPumpController.port.Write([]byte(cmd))
+	//time.Sleep(10 * time.Millisecond)
+	// 演奏过程中不需要等待响应，立即返回以避免延迟累积
+	return "OK"
+}
+
+// GlobalPumpSendSync 发送气泵命令（同步版本，等待响应，确保命令执行）
+func GlobalPumpSendSync(cmd string) string {
 	if globalPumpController == nil || globalPumpController.port == nil {
 		return "气泵控制器未初始化"
 	}
@@ -126,8 +138,11 @@ func GlobalPumpSend(cmd string) string {
 	}
 	globalPumpController.port.Write([]byte(cmd))
 
-	// 演奏过程中不需要等待响应，立即返回以避免延迟累积
-	return "OK"
+	// 等待足够时间让命令执行
+	//time.Sleep(1 * time.Millisecond)
+	buf := make([]byte, 1024)
+	n, _ := globalPumpController.port.Read(buf)
+	return string(buf[:n])
 }
 
 // PumpSend 发送气泵命令（实例版本，已废弃）
@@ -149,6 +164,9 @@ func GlobalPumpOn() string { return GlobalPumpSend("on") }
 
 // GlobalPumpOff 关闭气泵（全局版本）
 func GlobalPumpOff() string { return GlobalPumpSend("off") }
+
+// GlobalPumpOffSync 关闭气泵（同步版本，确保命令执行）
+func GlobalPumpOffSync() string { return GlobalPumpSendSync("off") }
 
 // GlobalPumpSetPWM 设置气泵PWM值（全局版本）
 func GlobalPumpSetPWM(value int) string {
@@ -318,92 +336,41 @@ func (u *Utils) ForwardToCanServiceAsync(canBridgeURL string, msg CanMessage) {
 }
 
 // ControlAirPumpWithLock 控制气泵开关（同步版本，等待操作完成）
-// 参数：cfg - 配置信息，用于判断使用串口还是CAN通信
+// 参数：cfg - 配置信息
 // on - true为开启，false为关闭
 func (u *Utils) ControlAirPumpWithLock(cfg Config, on bool) error {
-	// 根据配置选择通信方式
-	if cfg.Pump.UseSerial && cfg.Pump.PortName != "" {
-		// 使用串口通信
-		// 检查全局气泵控制器是否已初始化
-		if globalPumpController == nil {
-			return fmt.Errorf("气泵控制器未初始化，请先调用InitGlobalPumpController")
-		}
-
-		if on {
-			// 开启气泵
-			GlobalPumpOn()
-		} else {
-			// 关闭气泵
-			GlobalPumpOff()
-		}
-
-		return nil
+	// 使用串口通信
+	// 检查全局气泵控制器是否已初始化
+	if globalPumpController == nil {
+		return fmt.Errorf("气泵控制器未初始化，请先调用InitGlobalPumpController")
 	}
 
-	// 使用CAN通信方式
-	return u.ControlAirPumpWithCAN(on)
+	if on {
+		// 开启气泵
+		GlobalPumpOn()
+	} else {
+		// 关闭气泵
+		GlobalPumpOff()
+	}
+
+	return nil
 }
 
 // ControlAirPumpAsync 异步控制气泵开关（不等待完成，极速模式）
 // 适用于演奏过程中的高频气泵开关，主程序严格按BPM时间推进
 func (u *Utils) ControlAirPumpAsync(cfg Config, on bool) {
 	go func() {
-		// 根据配置选择通信方式
-		if cfg.Pump.UseSerial && cfg.Pump.PortName != "" {
-			// 使用串口通信
-			if globalPumpController == nil {
-				return // 异步模式下，错误不影响主流程
-			}
+		// 使用串口通信
+		if globalPumpController == nil {
+			return // 异步模式下，错误不影响主流程
+		}
 
-			if on {
-				GlobalPumpOn()
-			} else {
-				GlobalPumpOff()
-			}
+		if on {
+			GlobalPumpOn()
 		} else {
-			// 使用CAN通信方式
-			u.ControlAirPumpWithCANAsync(on)
+			GlobalPumpOff()
 		}
 	}()
-}
-
-// ControlAirPumpWithCAN 使用CAN通信控制气泵（同步版本）
-func (u *Utils) ControlAirPumpWithCAN(on bool) error {
-	QBmsg := CanMessage{
-		Interface: "can4", // 默认气泵接口
-		Id:        0x101,
-		Data:      []byte{},
-	}
-
-	if on {
-		// 发送开启气泵的指令
-		QBmsg.Data = []byte{0x01, 00, 00, 00, 00, 00, 00, 00}
-	} else {
-		// 发送关闭气泵的指令
-		QBmsg.Data = []byte{0x00, 00, 00, 00, 00, 00, 00, 00}
-	}
-
-	return u.ForwardToCanService("http://localhost:5260", QBmsg)
-}
-
-// ControlAirPumpWithCANAsync 使用CAN通信控制气泵（异步版本）
-func (u *Utils) ControlAirPumpWithCANAsync(on bool) {
-	QBmsg := CanMessage{
-		Interface: "can4", // 默认气泵接口
-		Id:        0x101,
-		Data:      []byte{},
-	}
-
-	if on {
-		// 发送开启气泵的指令
-		QBmsg.Data = []byte{0x01, 00, 00, 00, 00, 00, 00, 00}
-	} else {
-		// 发送关闭气泵的指令
-		QBmsg.Data = []byte{0x00, 00, 00, 00, 00, 00, 00, 00}
-	}
-
-	// 异步发送，不等待响应
-	u.ForwardToCanServiceAsync("http://localhost:5260", QBmsg)
 }
 
 // SwitchFingeringWithLogging 带日志记录的指法切换（保留用于手动发送）

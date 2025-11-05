@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>萨克斯自动演奏系统</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/preprocess.css">
 </head>
 <body>
     <div class="container">
@@ -13,8 +14,8 @@
             <div class="instrument-switch">
                 <label class="switch-label">乐器选择:</label>
                 <div class="switch-container">
-                    <button id="sksBtn" class="instrument-btn active">萨克斯</button>
-                    <button id="snBtn" class="instrument-btn">唢呐（葫芦丝笛子）</button>
+                    <button id="sksBtn" class="instrument-btn ">萨克斯</button>
+                    <button id="snBtn" class="instrument-btn active">唢呐（葫芦丝笛子）</button>
                 </div>
             </div>
         </header>
@@ -51,9 +52,26 @@
                             <input type="number" id="tonguingDelayInput" min="10" max="100" value="30" />
                         </div>
                     </div>
+                    
+                    <!-- 气泵调试 -->
+                    <div class="pump-debug-section">
+                        <label for="pumpDebugInput">🔧 气泵调试:</label>
+                        <div class="pump-debug-controls">
+                            <input type="text" id="pumpDebugInput" placeholder="输入命令（如：on, off, set100）" />
+                            <button id="pumpDebugBtn" class="btn btn-warning">发送</button>
+                            <button id="pumpOnBtn" class="btn btn-warning">on</button>
+                            <button id="pumpOffBtn" class="btn btn-warning">off</button>
+                        </div>
+                       
+                        <div id="pumpDebugStatus" class="pump-debug-status"></div>
+                    </div>
+                    
+                    <div class="preprocess-section">
+                        <button id="preprocessBtn" class="btn btn-secondary">🔄 手动预处理</button>
+                        <div id="preprocessStatus" class="preprocess-status info">ℹ️ 系统将自动检测并使用预处理文件，如未找到会自动生成</div>
+                    </div>
                     <div class="control-buttons">
                         <button id="startBtn" class="btn btn-primary">▶️ 开始演奏</button>
-                        <button id="pauseBtn" class="btn btn-warning" disabled>⏸️ 暂停演奏</button>
                         <button id="stopBtn" class="btn btn-danger" disabled>⏹️ 停止演奏</button>
                     </div>
                 </div>
@@ -63,8 +81,12 @@
                     <h3>🎵 歌曲信息</h3>
                     <div class="song-info">
                         <div class="info-item">
-                            <span class="label">歌曲时长:</span>
+                            <span class="label">理论时长:</span>
                             <span id="songDuration" class="value">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">实际计时:</span>
+                            <span id="actualTimer" class="value timer">00:00.000</span>
                         </div>
                         <div class="info-item">
                             <span class="label">总音符数:</span>
@@ -74,6 +96,22 @@
                             <span class="label">空拍数量:</span>
                             <span id="songRestCount" class="value">-</span>
                         </div>
+                        <div class="info-item">
+                            <span class="label">显著空拍数量:</span>
+                            <span id="significantRestCount" class="value">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">时间误差:</span>
+                            <span id="timeDiff" class="value">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 显著空拍详情 -->
+                <div class="rest-details-section" id="restDetailsSection" style="display:none;">
+                    <h3>📊 显著空拍详情 (≥4拍或≥1秒)</h3>
+                    <div id="restDetailsContent" class="rest-details-content">
+                        <!-- 空拍详情将通过JavaScript动态加载 -->
                     </div>
                 </div>
 
