@@ -31,17 +31,17 @@ ready:
     enabled: true
     hold_ms: 300
 # 逐指"按压/松开"幅度（0~255），顺序：拇指, 拇指旋转, 食指, 中指, 无名指, 小指
-sks_left_press_profile: [141, 25, 255, 255, 255, 255] # 255 * 0.7 ≈ 178（你要求的按压值）
-sks_left_release_profile: [255, 255, 255, 255, 255, 255] # 你要求松开=255
-sks_right_press_profile: [171, 18, 222, 219, 215, 224] # 255 * 0.7 ≈ 178（你要求的按压值）
-sks_right_release_profile: [171, 18, 255, 255, 255, 255] # 你要求松开=255
+sks_left_press_profile: [141, 25, 255, 255, 255, 255] # 按压值
+sks_left_release_profile: [255, 255, 255, 255, 255, 255] # 松开
+sks_right_press_profile: [171, 18, 222, 219, 215, 224] # 按压值
+sks_right_release_profile: [171, 18, 255, 255, 255, 255] # 松开
 #默认中音
 sn_left_press_profile: [151, 19, 232, 233, 235, 255]
 sn_left_release_profile: [151, 19, 255, 255, 255, 255]
 #高音,修改默认中音左手的的前两位，对应Thumb2
 sn_left_high_Thumb: [131, 19, 255, 255, 255, 255]
 #倍高音，修改默认中音的前两位。对应Thumb1
-sn_left_high_pro_Thumb: [110, 43]
+sn_left_high_pro_Thumb: [110, 80]
 sn_right_press_profile: [0, 255, 233, 230, 238, 255]
 sn_right_release_profile: [0, 255, 255, 255, 255, 255]
 

@@ -113,16 +113,16 @@ type RestTimingResponse struct {
 
 // 演奏控制器
 type PlaybackController struct {
-	mutex     sync.RWMutex
-	status    PlaybackStatus
-	stopChan  chan bool
-	doneChan  chan bool // 播放完成信号
-	isRunning bool
-	config    Config
-	//timeline     TimelineFile
-	//fingeringMap map[string]FingeringEntry
-	startTime  time.Time
-	instrument string // "sks" 或 "sn"，表示当前乐器类型
+	mutex        sync.RWMutex
+	status       PlaybackStatus
+	stopChan     chan bool
+	doneChan     chan bool // 播放完成信号
+	isRunning    bool
+	config       Config
+	timeline     TimelineFile              //记录日志
+	fingeringMap map[string]FingeringEntry //记录指法映射，打印发送日志
+	startTime    time.Time
+	instrument   string // "sks" 或 "sn"，表示当前乐器类型
 }
 
 ////////////////////////////////////////////////////////////////////////////////
