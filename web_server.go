@@ -70,6 +70,7 @@ func (ws *WebServer) StartWebServer() {
 	r.GET("/api/playback/status", ws.getPlaybackStatus)
 	r.GET("/api/fingerings", ws.getFingeringMap)
 	r.POST("/api/fingerings/send", ws.sendSingleFingering)
+	r.GET("/api/playback/logs", ws.getPlaybackLogs)
 
 	// 预处理相关API
 	r.POST("/api/preprocess", ws.preprocessSequence)
@@ -81,7 +82,7 @@ func (ws *WebServer) StartWebServer() {
 
 	// 配置管理API
 	r.GET("/api/config", ws.getConfig)
-	r.POST("/api/config/reload", ws.reloadConfig)
+	r.GET("/api/config/reload", ws.reloadConfig)
 	r.POST("/api/config/save", ws.saveConfig)
 
 	// 静态文件服务（使用嵌入的文件系统）
@@ -103,6 +104,24 @@ func (ws *WebServer) StartWebServer() {
 	if err := r.Run(":1105"); err != nil {
 		fmt.Printf("❌ Web服务启动失败: %v\n", err)
 	}
+}
+
+type PlaybackLogs struct {
+	Timeline     [][]any                   `json:"timeline"`      // 时间轴：[[音符, 持续拍数], ...]
+	FingeringMap map[string]FingeringEntry `json:"fingering_map"` // 指法映射
+
+}
+
+// GetPlaybackLogs 获取播放日志
+func (ws *WebServer) getPlaybackLogs(c *gin.Context) {
+	playbackController.mutex.RLock()
+	timeline := playbackController.timeline
+	fingeringMap := playbackController.fingeringMap
+	playbackController.mutex.RUnlock()
+	c.JSON(http.StatusOK, gin.H{"logs": PlaybackLogs{
+		Timeline:     timeline.Timeline,
+		FingeringMap: fingeringMap,
+	}})
 }
 
 // GetTimeline 获取歌曲时间轴数据

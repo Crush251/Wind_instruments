@@ -90,12 +90,16 @@ function setupEventListeners() {
     // 配置管理按钮
     const editConfigBtn = document.getElementById('editConfigBtn');
     const saveConfigBtn = document.getElementById('saveConfigBtn');
+    const reloadConfigBtn = document.getElementById('reloadConfigBtn');
     const cancelConfigBtn = document.getElementById('cancelConfigBtn');
     if (editConfigBtn) {
         editConfigBtn.addEventListener('click', editConfig);
     }
     if (saveConfigBtn) {
         saveConfigBtn.addEventListener('click', saveConfig);
+    }
+    if (reloadConfigBtn) {
+        reloadConfigBtn.addEventListener('click', reloadConfig);
     }
     if (cancelConfigBtn) {
         cancelConfigBtn.addEventListener('click', cancelConfigEdit);
@@ -393,40 +397,65 @@ async function updateLogs() {
     try {
         const response = await fetch('/api/playback/logs');
         const data = await response.json();
-        
-        renderLogs(data.logs);
+        //console.log('日志数据:', data);
+        renderLogs(data);
         
     } catch (error) {
         console.error('更新日志失败:', error);
     }
 }
 
-// 渲染日志
-function renderLogs(logs) {
-    if (!logs || logs.length === 0) {
+// 渲染日志（用于显示时间轴和指法映射）
+// logs 参数是 { logs: { Timeline: [...], FingeringMap: {...} } }
+function renderLogs(data) {
+    if (!data || !data.logs) {
         logContent.innerHTML = '<div class="no-logs">暂无日志</div>';
         return;
     }
-    
+
+    const timeline = data.logs.Timeline || [];
+    const fingeringMap = data.logs.FingeringMap || {};
+
+    if (!timeline.length) {
+        logContent.innerHTML = '<div class="no-logs">暂无时间轴数据</div>';
+        return;
+    }
+
     logContent.innerHTML = '';
-    
-    logs.forEach(log => {
+
+    timeline.forEach((item, idx) => {
+        // item 形如: [音符, 持续拍数]
+        const note = item[0];
+        const duration = item[1];
+
+        // 查找指法条目
+        const fingeringEntry = fingeringMap[note];
+        let leftFingers = '';
+        let rightFingers = '';
+        if (fingeringEntry) {
+            leftFingers = (fingeringEntry.Left || []).join(', ');
+            rightFingers = (fingeringEntry.Right || []).join(', ');
+        }
+
         const logEntry = document.createElement('div');
         logEntry.className = 'log-entry';
-        
-        const typeClass = log.type === 'info' ? 'info' : 
-                         log.type === 'can' ? 'can' : 
-                         log.type === 'error' ? 'error' : 'info';
-        
+
         logEntry.innerHTML = `
-            <span class="log-timestamp">[${log.timestamp}]</span>
-            <span class="log-type ${typeClass}">${log.type.toUpperCase()}</span>
-            <span class="log-message">${log.message}</span>
+            <div>
+                <b>序号:</b> ${idx + 1}
+                <b> 音符:</b> ${note}
+                <b> 时值:</b> ${duration}
+            </div>g
+            <div>
+                <span class="log-fingering"><b>左手:</b> ${leftFingers || '-'}</span>
+                <span class="log-fingering"><b>右手:</b> ${rightFingers || '-'}</span>
+            </div>
+            <hr>
         `;
-        
+
         logContent.appendChild(logEntry);
     });
-    
+
     if (autoScroll) {
         logContent.scrollTop = logContent.scrollHeight;
     }
@@ -1263,11 +1292,16 @@ async function loadConfig() {
 }
 //重新加载配置
 async function reloadConfig() {
-    await loadConfig();
+    //await loadConfig();
     try {
-        const response = await fetch('/api/config/reload');
+        const response = await fetch('/api/config/reload', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
         const data = await response.json();
-        
+        console.log('重新加载配置:', data);
         if (response.ok && data.config) {
             currentConfig = data.config;
             renderConfigDisplay(data.config);
