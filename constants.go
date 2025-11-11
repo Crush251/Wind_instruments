@@ -23,7 +23,5 @@ var fingerIndex = map[string]int{
 
 // 全局演奏控制器
 var playbackController = &PlaybackController{
-	stopChan:   make(chan bool, 1),
-	doneChan:   make(chan bool, 1),
 	instrument: "sn", // 默认为唢呐
 }

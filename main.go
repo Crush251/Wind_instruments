@@ -130,8 +130,11 @@ func main() {
 			os.Exit(1)
 		}
 
+		// 创建播放上下文
+		ctx := playbackController.StartPlayback(cfg, engine.sequence.Meta.Instrument)
+
 		// 执行播放
-		if err := engine.Play(); err != nil {
+		if err := engine.Play(ctx); err != nil {
 			fmt.Printf("❌ 播放失败: %v\n", err)
 			os.Exit(1)
 		}
@@ -188,7 +191,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err := engine.Play(); err != nil {
+		// 创建播放上下文
+		ctx := playbackController.StartPlayback(cfg, engine.sequence.Meta.Instrument)
+
+		if err := engine.Play(ctx); err != nil {
 			fmt.Printf("❌ 播放失败: %v\n", err)
 			os.Exit(1)
 		}

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -18,13 +20,14 @@ var ErrUserStopped = errors.New("user stopped playback")
 
 // ExecutionEngine 执行引擎
 type ExecutionEngine struct {
-	sequence    *ExecutionSequence
-	cfg         Config
-	httpClient  *http.Client
-	utils       *Utils
-	restTimings []RestTiming // 休止符时间记录
-	actualStart time.Time    // 实际开始时间
-	actualEnd   time.Time    // 实际结束时间
+	sequence     *ExecutionSequence
+	cfg          Config
+	httpClient   *http.Client
+	utils        *Utils
+	restTimings  []RestTiming   // 休止符时间记录
+	actualStart  time.Time      // 实际开始时间
+	actualEnd    time.Time      // 实际结束时间
+	canWaitGroup sync.WaitGroup // 用于等待异步 CAN 帧完成
 }
 
 // RestTiming 休止符时间记录
@@ -68,8 +71,8 @@ func loadExecutionSequence(filepath string) (*ExecutionSequence, error) {
 	return &sequence, nil
 }
 
-// Play 执行播放（极简版本，主程序只负责时间控制）
-func (ee *ExecutionEngine) Play() error {
+// Play 执行播放（使用 context 控制）
+func (ee *ExecutionEngine) Play(ctx context.Context) error {
 	fmt.Printf("🎵 开始执行播放\n")
 	fmt.Printf("   文件: %s\n", ee.sequence.Meta.SourceFile)
 	fmt.Printf("   乐器: %s, BPM: %.1f\n", ee.sequence.Meta.Instrument, ee.sequence.Meta.BPM)
@@ -85,15 +88,25 @@ func (ee *ExecutionEngine) Play() error {
 	msPerBeat := (60.0 / ee.sequence.Meta.BPM) * 1000.0
 
 	for i, event := range ee.sequence.Events {
-		// 检查停止信号
+		// 检查上下文是否被取消
 		select {
-		case <-playbackController.stopChan:
-			fmt.Println("⏹️  收到停止信号，正在关闭气泵...")
-			// 立即关闭气泵
-			if globalPumpController != nil {
-				GlobalPumpOff()
-				fmt.Println("🔴 气泵已紧急关闭")
+		case <-ctx.Done():
+			fmt.Println("⏹️  收到停止信号，等待异步操作完成...")
+
+			// 等待所有异步 CAN 帧完成（最多等待 100ms）
+			done := make(chan struct{})
+			go func() {
+				ee.canWaitGroup.Wait()
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				fmt.Println("✅ 所有异步操作已完成")
+			case <-time.After(100 * time.Millisecond):
+				fmt.Println("⚠️  等待超时，强制停止")
 			}
+
 			return ErrUserStopped
 		default:
 		}
@@ -104,9 +117,13 @@ func (ee *ExecutionEngine) Play() error {
 		// 计算需要等待的时间（相对于上一个事件）
 		waitDuration := time.Duration(event.TimestampMS-lastTimestamp) * time.Millisecond
 
-		// *** 主程序只负责精确时间控制 ***
+		// 使用带上下文的 sleep，可以被立即打断
 		if waitDuration > 0 {
-			time.Sleep(waitDuration)
+			select {
+			case <-time.After(waitDuration):
+			case <-ctx.Done():
+				return ErrUserStopped
+			}
 		}
 
 		// *** 所有I/O操作异步执行（不阻塞主程序） ***
@@ -177,10 +194,13 @@ func (ee *ExecutionEngine) sendFramesAsync(event ExecutionEvent) {
 		ee.sendSerialCmd(event.SerialCmd)
 	}
 
-	// 异步发送所有CAN帧（指法）
-	// len(nil) 返回 0，所以不需要显式检查 nil
+	// 使用 WaitGroup 跟踪所有 CAN 帧
 	for _, frame := range event.Frames {
-		go ee.sendSingleFrame(frame)
+		ee.canWaitGroup.Add(1)
+		go func(f ExecCANFrame) {
+			defer ee.canWaitGroup.Done()
+			ee.sendSingleFrame(f)
+		}(frame)
 	}
 }
 
@@ -236,12 +256,11 @@ func (ee *ExecutionEngine) updateProgress(current, total int) {
 
 // PlayAsync 异步执行播放（用于Web API）
 func (ee *ExecutionEngine) PlayAsync() error {
-	// 初始化演奏状态
+	// 创建新的播放上下文
+	ctx := playbackController.StartPlayback(ee.cfg, ee.sequence.Meta.Instrument)
+
+	// 初始化状态
 	playbackController.mutex.Lock()
-	playbackController.isRunning = true
-	playbackController.startTime = time.Now()
-	playbackController.instrument = ee.sequence.Meta.Instrument // 设置乐器类型
-	playbackController.config = ee.cfg                          // 设置配置
 	playbackController.status = PlaybackStatus{
 		IsPlaying:   true,
 		CurrentFile: ee.sequence.Meta.SourceFile,
@@ -251,72 +270,94 @@ func (ee *ExecutionEngine) PlayAsync() error {
 	}
 	playbackController.mutex.Unlock()
 
-	// 开始播放
+	// 异步播放
 	go func() {
+		// 统一的资源清理（无论正常还是停止）
 		defer func() {
-			// 确保播放结束时发送完成信号
-			select {
-			case playbackController.doneChan <- true:
-				fmt.Println("📢 播放goroutine: 已发送完成信号")
-			default:
-				fmt.Println("⚠️  播放goroutine: 完成信号通道已满")
-			}
+			ee.cleanup()
 		}()
 
-		err := ee.Play()
+		// 执行播放
+		err := ee.Play(ctx)
 
-		// 播放结束处理 - 确保气泵关闭
-		if globalPumpController != nil {
-			GlobalPumpOff()
-		}
-
-		// 执行预备手势（松开手指）
-		if playbackController.config.Ready.Enabled {
-			readyController := NewReadyGestureController()
-			readyController.ExecuteReadyGesture(playbackController.config, ee.sequence.Meta.Instrument)
-		}
-
-		// 计算实际播放时长
-		actualDuration := ee.actualEnd.Sub(ee.actualStart).Seconds()
-		theoreticalDuration := ee.sequence.Meta.TotalDurationMS / 1000.0
-
-		// 统计显著空拍
-		significantRests := []RestTimingResponse{}
-		for _, rest := range ee.restTimings {
-			if rest.IsSignificant {
-				startOffset := rest.StartTime.Sub(ee.actualStart).Seconds()
-				// 修正结束时间：因为记录的是预切换时刻（80%处），需要除以0.8得到实际结束时间
-				endOffset := rest.EndTime.Sub(ee.actualStart).Seconds() / 0.8
-				significantRests = append(significantRests, RestTimingResponse{
-					StartOffset: startOffset,
-					EndOffset:   endOffset,
-					Duration:    rest.Duration / 0.8, //修正时长：因为记录的是预切换时刻（80%处），需要除以0.8得到实际时长
-					Beats:       rest.Beats / 0.8,    //修正拍数：因为记录的是预切换时刻（80%处），需要除以0.8得到实际拍数
-				})
-			}
-		}
-
-		// 更新播放状态（包含空拍信息）
-		playbackController.mutex.Lock()
-		playbackController.isRunning = false
-		playbackController.status.IsPlaying = false
-		playbackController.status.Progress = 100
-		playbackController.status.TheoreticalDuration = theoreticalDuration
-		playbackController.status.ActualDuration = actualDuration
-		playbackController.status.SignificantRests = significantRests
-		// 保留 CurrentFile、CurrentNote、TotalNotes 以便前端显示
-		playbackController.mutex.Unlock()
-
-		if err != nil {
-			if errors.Is(err, ErrUserStopped) {
-				fmt.Printf("⏹️  播放已被用户停止\n")
-			} else {
-				fmt.Printf("❌ 播放出错: %v\n", err)
-			}
-		} else {
-			fmt.Printf("✅ 播放完成，气泵已关闭\n")
-		}
+		// 更新最终状态
+		ee.updateFinalStatus(err)
 	}()
 
 	return nil
+}
+
+// cleanup 统一的资源清理函数
+func (ee *ExecutionEngine) cleanup() {
+	fmt.Println("🧹 开始资源清理...")
+
+	// 1. 等待所有异步 CAN 帧完成
+	done := make(chan struct{})
+	go func() {
+		ee.canWaitGroup.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("✅ 所有 CAN 帧已发送完成")
+	case <-time.After(100 * time.Millisecond):
+		fmt.Println("⚠️  等待 CAN 帧超时")
+	}
+
+	// 2. 关闭气泵
+	if globalPumpController != nil {
+		fmt.Println("🔴 关闭气泵...")
+		GlobalPumpOffSync()
+	}
+
+	// 3. 执行预备手势（松开手指）
+	if playbackController.config.Ready.Enabled {
+		fmt.Println("🤲 执行预备手势...")
+		readyController := NewReadyGestureController()
+		readyController.ExecuteReadyGesture(playbackController.config, ee.sequence.Meta.Instrument)
+	}
+
+	// 4. 标记播放完成
+	playbackController.MarkFinished()
+
+	fmt.Println("✅ 资源清理完成")
+}
+
+// updateFinalStatus 更新最终状态
+func (ee *ExecutionEngine) updateFinalStatus(err error) {
+	actualDuration := ee.actualEnd.Sub(ee.actualStart).Seconds()
+	theoreticalDuration := ee.sequence.Meta.TotalDurationMS / 1000.0
+
+	// 统计显著空拍
+	significantRests := []RestTimingResponse{}
+	for _, rest := range ee.restTimings {
+		if rest.IsSignificant {
+			startOffset := rest.StartTime.Sub(ee.actualStart).Seconds()
+			endOffset := rest.EndTime.Sub(ee.actualStart).Seconds() / 0.8
+			significantRests = append(significantRests, RestTimingResponse{
+				StartOffset: startOffset,
+				EndOffset:   endOffset,
+				Duration:    rest.Duration / 0.8,
+				Beats:       rest.Beats / 0.8,
+			})
+		}
+	}
+
+	playbackController.mutex.Lock()
+	playbackController.status.Progress = 100
+	playbackController.status.TheoreticalDuration = theoreticalDuration
+	playbackController.status.ActualDuration = actualDuration
+	playbackController.status.SignificantRests = significantRests
+	playbackController.mutex.Unlock()
+
+	if err != nil {
+		if errors.Is(err, ErrUserStopped) {
+			fmt.Printf("⏹️  播放已被用户停止\n")
+		} else {
+			fmt.Printf("❌ 播放出错: %v\n", err)
+		}
+	} else {
+		fmt.Printf("✅ 播放完成\n")
+	}
 }

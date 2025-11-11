@@ -27,4 +27,5 @@ exec/
 trsmusic/
 
 # 忽略单个文件
-
+* .md
+* .sh

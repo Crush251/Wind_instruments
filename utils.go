@@ -108,11 +108,6 @@ func CloseGlobalPumpController() {
 	}
 }
 
-// NewPumpController 创建新的气泵控制器（已废弃，使用全局控制器）
-func (u *Utils) NewPumpController(portName string) error {
-	return InitGlobalPumpController(portName)
-}
-
 // ClosePumpController 关闭气泵控制器（已废弃，使用全局控制器）
 func (u *Utils) ClosePumpController() {
 	CloseGlobalPumpController()

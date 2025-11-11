@@ -232,69 +232,39 @@ func (ws *WebServer) getMusicFiles(c *gin.Context) {
 	})
 }
 
-// StopPlayback 停止演奏（同步等待版本，确保完全停止）
+// StopPlayback 停止演奏（简化版本）
 func (ws *WebServer) stopPlayback(c *gin.Context) {
-	fmt.Println("🛑 === 开始停止流程 ===")
+	fmt.Println("🛑 收到停止请求")
 
-	playbackController.mutex.RLock()
-	isRunning := playbackController.isRunning
-	instrument := playbackController.instrument
-	cfg := playbackController.config
-	playbackController.mutex.RUnlock()
-
-	fmt.Printf("🔍 当前播放状态: isRunning=%v, instrument=%s\n", isRunning, instrument)
-
-	if !isRunning {
+	// 检查是否正在播放
+	if !playbackController.IsRunning() {
 		fmt.Println("ℹ️  没有正在运行的播放任务")
 		c.JSON(http.StatusOK, gin.H{"message": "演奏已停止"})
 		return
 	}
 
-	// 1. 立即关闭气泵（最优先）
-	if globalPumpController != nil {
-		fmt.Println("🔴 步骤1: 立即关闭气泵（使用同步方式）...")
-		result := GlobalPumpOffSync()
-		fmt.Printf("✅ 气泵关闭命令已执行，响应: %s\n", result)
-	} else {
-		fmt.Println("⚠️  气泵控制器为nil（可能是串口未连接）")
+	// 调用统一的停止方法
+	playbackController.StopPlayback()
+
+	// 等待资源清理完成（最多 3 秒）
+	timeout := time.After(3 * time.Second)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if !playbackController.IsRunning() {
+				fmt.Println("✅ 播放已完全停止")
+				c.JSON(http.StatusOK, gin.H{"message": "演奏已停止"})
+				return
+			}
+		case <-timeout:
+			fmt.Println("⚠️  等待超时，强制返回")
+			c.JSON(http.StatusOK, gin.H{"message": "演奏已停止（超时）"})
+			return
+		}
 	}
-
-	// 2. 发送停止信号并等待播放goroutine真正结束
-	fmt.Println("📤 步骤2: 发送停止信号并等待播放完全停止...")
-	select {
-	case playbackController.stopChan <- true:
-		fmt.Println("✅ 停止信号已发送")
-	default:
-		fmt.Println("⚠️  停止信号通道已满")
-	}
-
-	// 等待播放goroutine真正结束（最多等待3秒）
-	fmt.Println("⏳ 等待播放goroutine完全退出...")
-	select {
-	case <-playbackController.doneChan:
-		fmt.Println("✅ 播放goroutine已完全退出")
-	case <-time.After(3 * time.Second):
-		fmt.Println("⚠️  等待超时（3秒），强制继续")
-	}
-
-	// 3. 执行预备手势（松开手指）
-	if instrument != "" {
-		fmt.Printf("🤲 步骤3: 执行预备手势（松开手指，乐器: %s）...\n", instrument)
-		readyController := NewReadyGestureController()
-		readyController.ExecuteReadyGesture(cfg, instrument)
-		fmt.Println("✅ 预备手势执行完成")
-	} else {
-		fmt.Println("⚠️  乐器类型为空，无法执行预备手势")
-	}
-
-	// 4. 更新状态
-	playbackController.mutex.Lock()
-	playbackController.isRunning = false
-	playbackController.status.IsPlaying = false
-	playbackController.mutex.Unlock()
-
-	fmt.Println("✅ === 停止流程完成，可以安全启动新播放 ===")
-	c.JSON(http.StatusOK, gin.H{"message": "演奏已停止"})
 }
 
 // GetPlaybackStatus 获取演奏状态
@@ -506,28 +476,33 @@ func (ws *WebServer) playExecSequence(c *gin.Context) {
 		return
 	}
 
-	// 停止当前播放（如果有）
-	if playbackController.isRunning {
-		fmt.Println("⚠️  检测到正在播放，先停止旧的播放任务...")
-		select {
-		case playbackController.stopChan <- true:
-			fmt.Println("✅ 停止信号已发送")
-		default:
-			fmt.Println("⚠️  停止信号通道已满")
-		}
+	// 如果正在播放，先停止（自动清理）
+	if playbackController.IsRunning() {
+		fmt.Println("⚠️  检测到正在播放，先停止...")
+		playbackController.StopPlayback()
 
-		// 等待旧播放完全停止
-		fmt.Println("⏳ 等待旧播放完全停止...")
-		select {
-		case <-playbackController.doneChan:
-			fmt.Println("✅ 旧播放已完全停止")
-		case <-time.After(2 * time.Second):
-			fmt.Println("⚠️  等待超时（2秒），强制继续")
-		}
+		// 等待停止完成
+		timeout := time.After(2 * time.Second)
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
 
-		// 短暂延迟确保资源释放
-		time.Sleep(100 * time.Millisecond)
+		stopped := false
+		for !stopped {
+			select {
+			case <-ticker.C:
+				if !playbackController.IsRunning() {
+					fmt.Println("✅ 旧播放已停止")
+					stopped = true
+				}
+			case <-timeout:
+				fmt.Println("⚠️  停止超时，强制继续")
+				stopped = true
+			}
+		}
 	}
+
+	// 短暂延迟确保资源释放
+	time.Sleep(100 * time.Millisecond)
 
 	// 加载配置
 	cfg := ws.fileReader.LoadConfig("config.yaml")
@@ -538,11 +513,12 @@ func (ws *WebServer) playExecSequence(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建执行引擎失败: %v", err)})
 		return
 	}
-	//检测气泵是否连接
-	if globalPumpController == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "气泵控制器未初始化"})
-		return
-	}
+
+	// 检测气泵是否连接
+	// if globalPumpController == nil {
+	// 	c.JSON(http.StatusServiceUnavailable, gin.H{"error": "气泵控制器未初始化"})
+	// 	return
+	// }
 
 	// 异步开始播放
 	if err := engine.PlayAsync(); err != nil {

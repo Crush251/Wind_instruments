@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -113,16 +114,71 @@ type RestTimingResponse struct {
 
 // 演奏控制器
 type PlaybackController struct {
-	mutex        sync.RWMutex
-	status       PlaybackStatus
-	stopChan     chan bool
-	doneChan     chan bool // 播放完成信号
+	mutex  sync.RWMutex
+	status PlaybackStatus
+
+	// 使用 context 替代 channel
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	isRunning    bool
 	config       Config
 	timeline     TimelineFile              //记录日志
 	fingeringMap map[string]FingeringEntry //记录指法映射，打印发送日志
 	startTime    time.Time
 	instrument   string // "sks" 或 "sn"，表示当前乐器类型
+}
+
+// StartPlayback 开始新的播放（返回上下文）
+func (pc *PlaybackController) StartPlayback(cfg Config, instrument string) context.Context {
+	pc.mutex.Lock()
+	defer pc.mutex.Unlock()
+
+	// 如果有旧播放，先取消
+	if pc.cancel != nil {
+		pc.cancel()
+	}
+
+	// 创建新的上下文
+	pc.ctx, pc.cancel = context.WithCancel(context.Background())
+
+	pc.isRunning = true
+	pc.startTime = time.Now()
+	pc.instrument = instrument
+	pc.config = cfg
+
+	return pc.ctx
+}
+
+// StopPlayback 停止播放（同步等待）
+func (pc *PlaybackController) StopPlayback() {
+	pc.mutex.Lock()
+	if !pc.isRunning || pc.cancel == nil {
+		pc.mutex.Unlock()
+		return
+	}
+
+	cancel := pc.cancel
+	pc.mutex.Unlock()
+
+	// 取消上下文
+	cancel()
+}
+
+// MarkFinished 标记播放完成
+func (pc *PlaybackController) MarkFinished() {
+	pc.mutex.Lock()
+	defer pc.mutex.Unlock()
+
+	pc.isRunning = false
+	pc.status.IsPlaying = false
+}
+
+// IsRunning 检查是否正在播放
+func (pc *PlaybackController) IsRunning() bool {
+	pc.mutex.RLock()
+	defer pc.mutex.RUnlock()
+	return pc.isRunning
 }
 
 ////////////////////////////////////////////////////////////////////////////////

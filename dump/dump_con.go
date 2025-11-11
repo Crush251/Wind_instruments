@@ -19,7 +19,6 @@ func NewPumpController(portName string) (*PumpController, error) {
 		return nil, err
 	}
 
-	time.Sleep(2 * time.Second)
 	port.ResetInputBuffer()
 
 	return &PumpController{port: port}, nil
